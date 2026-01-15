@@ -1,31 +1,37 @@
 import logging
-
+import sys
 
 def configure_logger() -> None:
-    """Configure a custom logger."""
+    """Configure a custom logger with Couchbase SDK logging."""
 
     # Create a logger
-    logger = logging.getLogger("fnano")
-    logger.setLevel(logging.INFO)
+    logger = logging.getLogger("uvicorn.error" )
+    logger.setLevel(logging.DEBUG)
+    formatter = logging.Formatter("%(asctime)s [%(processName)s: %(process)d] [%(threadName)s: %(thread)d] [%(levelname)s] %(name)s: %(message)s")
 
-    # Create a handler (console output in this case)
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(formatter)
+    file_handler = logging.FileHandler("info.log")
+    file_handler.setFormatter(formatter)
 
-    # Create a formatter and set it to the handler
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    console_handler.setFormatter(formatter)
+    #logger.addHandler(stream_handler)
+    logger.addHandler(file_handler)
 
-    # Add the handler to the logger
-    if not logger.hasHandlers():
-        logger.addHandler(console_handler)
+    # Configure Couchbase SDK logging to show query details
+    couchbase_logger = logging.getLogger("couchbase")
+    couchbase_logger.setLevel(logging.DEBUG)
 
-    # Disable propagation to avoid log duplication via uvicorn
-    logger.propagate = False
+    # Add handlers to Couchbase logger
+    couchbase_stream_handler = logging.StreamHandler(sys.stdout)
+    couchbase_stream_handler.setFormatter(formatter)
+    couchbase_file_handler = logging.FileHandler("couchbase_queries.log")
+    couchbase_file_handler.setFormatter(formatter)
 
-    # Disable passlib logger
-    # See: <https://github.com/pyca/bcrypt/issues/684>
-    logging.getLogger("passlib").setLevel(logging.ERROR)
+    couchbase_logger.addHandler(couchbase_stream_handler)
+    couchbase_logger.addHandler(couchbase_file_handler)
+
+    # Also configure specific Couchbase modules for detailed query logging
+    logging.getLogger("couchbase.query").setLevel(logging.DEBUG)
+    logging.getLogger("couchbase.search").setLevel(logging.DEBUG)
+    logging.getLogger("couchbase.analytics").setLevel(logging.DEBUG)
+    logging.getLogger("couchbase.vector_search").setLevel(logging.DEBUG)

@@ -68,4 +68,5 @@ kill-container: ## Stop the running docker container.
 
 .PHONY: run-local
 run-local: ## Run the app locally.
-	uv run uvicorn svc.main:app --port 5002 --reload
+	uv run uvicorn svc.main:app --port 8000 --reload  --log-level debug
+
