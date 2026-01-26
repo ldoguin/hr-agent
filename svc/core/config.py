@@ -12,6 +12,7 @@ load_dotenv()
 DEFAULT_BUCKET = os.getenv("CB_BUCKET", "default")
 DEFAULT_SCOPE = os.getenv("CB_SCOPE", "agentc_data")
 DEFAULT_COLLECTION = os.getenv("CB_COLLECTION", "candidates")
+DEFAULT_AGENDA_COLLECTION = os.getenv("CB_AGENDA_COLLECTION", "timeslots")
 DEFAULT_INDEX = os.getenv("CB_INDEX", "candidates_index")
 DEFAULT_RESUME_DIR = os.getenv("RESUME_DIR", "resumes")
 
@@ -34,3 +35,18 @@ API_ALGORITHM = config("API_ALGORITHM", str)
 API_ACCESS_TOKEN_EXPIRE_MINUTES = config(
     "API_ACCESS_TOKEN_EXPIRE_MINUTES", int
 )  # infinity
+
+
+# AI configuration
+CAPELLA_API_ENDPOINT = os.getenv("CAPELLA_API_ENDPOINT")
+CAPELLA_API_EMBEDDINGS_KEY = os.getenv("CAPELLA_API_EMBEDDINGS_KEY")
+CAPELLA_API_EMBEDDING_MODEL = os.getenv("CAPELLA_API_EMBEDDING_MODEL")
+CAPELLA_API_LLM_KEY = os.getenv("CAPELLA_API_LLM_KEY")
+CAPELLA_API_LLM_MODEL = os.getenv("CAPELLA_API_LLM_MODEL", "deepseek-ai/DeepSeek-R1-Distill-Llama-8B")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# AgentMail configuration
+INBOX_USERNAME = os.getenv("INBOX_USERNAME", "hrbot")
+PORT = int(os.getenv("AGENTMAIL_PORT", "8000"))
+WEBHOOK_DOMAIN = os.getenv("WEBHOOK_DOMAIN", "llama-daring-thankingly.ngrok-free.app")
+AGENTMAIL_API_KEY = os.getenv("AGENTMAIL_API_KEY")

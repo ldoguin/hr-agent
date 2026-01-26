@@ -14,16 +14,19 @@ authors = [{name = "Redowan Delowar", email = "redowan.nafi@gmail.com"}]
 dependencies = [
     "agentc>=1.0.0",
     "agentc-langchain>=1.0.0",
+    "agentmail>=0.2.1",
     "bcrypt>=4.2.0",
     "couchbase>=4.5.0",
     "fastapi>=0.115.4",
     "gunicorn>=23.0.0",
     "httptools>=0.7.1",
+    "ngrok>=1.4.0",
     "passlib>=1.7.4",
     "pydantic>=2.12.5",
     "pypdf>=6.5.0",
     "python-jose[cryptography]>=3.3.0",
     "python-multipart>=0.0.17",
+    "sentence-transformers>=3.0.0",
     "uvicorn[standard]>=0.38.0",
     "uvloop>=0.22.1",
     "websockets>=16.0",
@@ -96,4 +99,4 @@ console_output_style = "progress"
 #################################################
 
 [tool.setuptools.packages.find]
-where = ["app"]  # ["."] by default
+where = ["."]

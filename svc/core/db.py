@@ -14,7 +14,7 @@ from couchbase.auth import PasswordAuthenticator
 from couchbase.management.search import SearchIndex
 from datetime import timedelta
 from typing import Dict, List, Optional
-
+from svc.core.config import DEFAULT_BUCKET, DEFAULT_SCOPE, DEFAULT_COLLECTION
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -28,9 +28,9 @@ def get_collection(cluster=None, bucket_name=None, scope_name=None, collection_n
         if not cluster:
             raise ConnectionError("Could not obtain cluster connection")
 
-    bucket_name = bucket_name or os.getenv("CB_BUCKET", "travel-sample")
-    scope_name = scope_name or os.getenv("CB_SCOPE", "agentc_data")
-    collection_name = collection_name or os.getenv("CB_COLLECTION", "candidates")
+    bucket_name = bucket_name or DEFAULT_BUCKET
+    scope_name = scope_name or DEFAULT_SCOPE
+    collection_name = collection_name or DEFAULT_COLLECTION
 
     bucket = cluster.bucket(bucket_name)
     scope = bucket.scope(scope_name)
@@ -258,3 +258,146 @@ class CouchbaseClient:
 
         except Exception as e:
             raise RuntimeError(f"Error setting up vector store: {e}")
+
+    # --------- Database Helper Functions --------- #
+
+    def _candidate_key(email: str) -> str:
+        """Generate candidate document key."""
+        return f"candidate::{email.lower()}"
+
+    def _application_key(application_id: str) -> str:
+        """Generate application document key."""
+        return f"application::{application_id}"
+
+    def _meeting_key(meeting_id: str) -> str:
+        """Generate meeting document key."""
+        return f"meeting::{meeting_id}"
+
+    # --------- Candidate Functions --------- #
+
+    def upsert_candidate(email: str, name: str) -> Dict[str, Any]:
+        """
+        Create or update a candidate document.
+        """
+        coll = get_collection()
+        key = _candidate_key(email)
+        now = datetime.utcnow().isoformat()
+
+        doc = {
+            "type": "candidate",
+            "email": email.lower(),
+            "name": name,
+            "updated_at": now,
+        }
+
+        # If it already exists, preserve created_at
+        try:
+            existing = coll.get(key).content_as[dict]
+            doc["created_at"] = existing.get("created_at", now)
+        except Exception:
+            doc["created_at"] = now
+
+        coll.upsert(key, doc)
+        return doc
+
+    def get_candidate_by_email(email: str) -> Optional[Dict[str, Any]]:
+        """Get candidate by email."""
+        coll = get_collection()
+        key = _candidate_key(email)
+        try:
+            res = coll.get(key)
+            return res.content_as[dict]
+        except Exception:
+            return None
+
+    # --------- Application Functions --------- #
+
+    def upsert_application(application_id: str, email: str, first_name: str, last_name: str, position: str, company_name: str) -> Dict[str, Any]:
+        """
+        Create or update an application document.
+        """
+        coll = get_collection()
+        key = _application_key(application_id)
+        now = datetime.utcnow().isoformat()
+
+        doc = {
+            "type": "application",
+            "id": application_id,
+            "email": email.lower(),
+            "first_name": first_name,
+            "last_name": last_name,
+            "full_name": f"{first_name} {last_name}".strip(),
+            "position": position,
+            "company_name": company_name,
+            "status": "email_sent",
+            "email_sent_at": now,
+            "updated_at": now,
+        }
+
+        # If it already exists, preserve created_at
+        try:
+            existing = coll.get(key).content_as[dict]
+            doc["created_at"] = existing.get("created_at", now)
+        except Exception:
+            doc["created_at"] = now
+
+        coll.upsert(key, doc)
+        return doc
+
+    def get_application_by_email(email: str) -> Optional[Dict[str, Any]]:
+        """
+        Get the most recent application for a given email.
+        """
+        cluster = get_cluster()
+        query = f"SELECT * FROM `{CB_BUCKET}` WHERE type = 'application' AND email = $email ORDER BY created_at DESC LIMIT 1"
+        try:
+            result = cluster.query(query, QueryOptions(parameters={"email": email.lower()}))
+            rows = list(result.rows())
+            return rows[0] if rows else None
+        except Exception:
+            return None
+
+    def get_application(key: str) -> Optional[Dict[str, Any]]:
+        """
+        Get application with key.
+        """
+        coll = get_collection()
+        try:
+            application = coll.get(key).content_as[dict]
+            return application
+        except Exception:
+            return None
+
+    # --------- Meeting Functions --------- #
+
+    def create_meeting(candidate_email: str, slot_iso: str) -> Dict[str, Any]:
+        """
+        Create a meeting document; assume slot_iso is valid.
+        """
+        coll = get_collection()
+        candidate = get_candidate_by_email(candidate_email)
+        if candidate is None:
+            raise ValueError("Candidate not found")
+
+        meeting_id = str(uuid.uuid4())
+        now = datetime.utcnow().isoformat()
+
+        doc = {
+            "type": "meeting",
+            "id": meeting_id,
+            "candidate_email": candidate_email.lower(),
+            "slot": slot_iso,
+            "status": "booked",
+            "created_at": now,
+        }
+        coll.insert(_meeting_key(meeting_id), doc)
+        return doc
+
+    def list_meetings() -> list[Dict[str, Any]]:
+        """
+        Query all meetings from the bucket.
+        """
+        cluster = get_cluster()
+        q = f"SELECT `{CB_BUCKET}`.* FROM `{CB_BUCKET}` WHERE type = 'meeting'"
+        res = cluster.query(q, QueryOptions())
+        return list(res.rows())

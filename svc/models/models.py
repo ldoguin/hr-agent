@@ -43,9 +43,19 @@ class ResumeUploadResponse(BaseModel):
     filename: str
     candidate_name: Optional[str] = None
 
-
 class ErrorResponse(BaseModel):
     """Error response model."""
     error: str
     detail: Optional[str] = None
 
+class InitialMeetingRequest(BaseModel):
+    """Request model for initial meeting request."""
+    email: str = Field(..., description="The email of the candidate")
+    first_name: str = Field( default = "Candidate", description="The first name of the candidate")
+    last_name: str = Field( default = "", description="The last name of the candidate")
+    position: str = Field(default = "Software Developer",  description="The position the candidate is applying to")
+    company_name: str = Field(default = "TechCorp Inc.",  description="The name of the hiring company")
+
+class InitialMeetingResponse(BaseModel):
+    """Response for Initial meeting request."""
+    application_id: str

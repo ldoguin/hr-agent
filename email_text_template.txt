@@ -1,0 +1,19 @@
+Dear {{ first_name }} {{ last_name }},
+
+Thank you for submitting your application for the {{ position }} position at {{ company_name }}. We have carefully reviewed your resume and qualifications, and we are impressed with your background and experience.
+
+We would like to invite you to participate in a first interview/screening call to discuss your application further and learn more about your qualifications and career goals.
+
+During this conversation, we will:
+- Discuss your background and experience
+- Review the role requirements and responsibilities
+- Answer any questions you may have about the position and {{ company_name }}
+- Determine if this opportunity aligns with your career objectives
+
+Would you be available for a 60-minute phone or video call this week or early next week? Please let us know your preferred time slot and whether you prefer a phone call or video conference.
+
+We look forward to speaking with you and learning more about your potential contribution to our team.
+
+Best regards,
+HR Team
+{{ company_name }}

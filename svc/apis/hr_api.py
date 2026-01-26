@@ -3,18 +3,39 @@ import logging
 import time
 import concurrent.futures
 import re
+import threading
+import uuid
+import ngrok
+from agentmail import AgentMail
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from fastapi import BackgroundTasks, File, UploadFile, HTTPException
+from fastapi import BackgroundTasks, File, UploadFile, HTTPException, Request
+from jinja2 import Template
 
 from svc.core.config import DEFAULT_BUCKET, DEFAULT_COLLECTION, DEFAULT_SCOPE, DEFAULT_INDEX, DEFAULT_RESUME_DIR
 from svc.core.agent import AgentManager
-from svc.models.models import HealthResponse, JobMatchRequest, JobMatchResponse, ResumeUploadResponse, CandidateResponse
+from agentmail import AgentMail
+from jinja2 import Template
+from svc.core.config import AGENTMAIL_API_KEY
+from svc.core.timeslot_manager import upsert_application, _application_key, get_application, get_candidate_by_email, get_agenda_collection
+from svc.models.models import HealthResponse, JobMatchRequest, JobMatchResponse, ResumeUploadResponse, CandidateResponse, InitialMeetingRequest, InitialMeetingResponse
 from svc.data.resume_loader import extract_text_from_pdf, analyze_resume_with_llm, format_candidate_for_embedding
 from svc.tools.search_candidates_vector import search_candidates_vector
 from langchain_couchbase.vectorstores import CouchbaseVectorStore
 
 logger = logging.getLogger("uvicorn.error")
+
+def get_agentmail_client():
+    """Get AgentMail client with proper initialization."""
+    api_key = AGENTMAIL_API_KEY
+    if not api_key:
+        raise ValueError("AGENTMAIL_API_KEY environment variable is required for AgentMail functionality")
+    return AgentMail(api_key=api_key)
+
+def render_email_template(template_content, template_vars):
+    """Render Jinja2 template with variables."""
+    template = Template(template_content)
+    return template.render(**template_vars)
 
 class HRAPI:
     """Main API class for HR-related operations."""
@@ -436,3 +457,155 @@ class HRAPI:
         except Exception as e:
             logger.exception(f"❌ Error in direct search: {e}")
             raise HTTPException(status_code=500, detail=str(e))
+
+    @staticmethod
+    def send_meeting_request(request: InitialMeetingRequest, agent_manager: AgentManager) -> InitialMeetingResponse:
+        """
+        Send initial meeting request email and create application document.
+
+        Creates an application in the database and sends an invitation email.
+        """
+        email = request.email
+        first_name = request.first_name
+        last_name = request.last_name
+        position = request.position
+        company_name = request.company_name
+
+        # Generate unique application ID
+        application_id = str(uuid.uuid4())
+
+        # Create application document in database
+        try:
+            if agent_manager.couchbase_client is None or agent_manager.couchbase_client.cluster is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Database not connected"
+                )
+
+            # Get the collection for applications
+            collection = get_agenda_collection( agent_manager.couchbase_client.cluster)
+
+            application_doc = upsert_application(
+                collection=collection,
+                application_id=application_id,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                position=position,
+                company_name=company_name
+            )
+            logger.info(f"Application document created: {application_id}")
+        except Exception as e:
+            logger.error(f"Error creating application document: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to create application document."
+            )
+
+        # Read email content from template files
+        try:
+            with open('email_text_template.txt', 'r', encoding='utf-8') as text_file:
+                email_text_template = text_file.read()
+
+            with open('email_html_template.html', 'r', encoding='utf-8') as html_file:
+                email_html_template = html_file.read()
+        except FileNotFoundError as e:
+            logger.error(f"Error reading email template files: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="Error reading email template files."
+            )
+
+        # Template variables for Jinja2 rendering
+        template_variables = {
+            'first_name': first_name,
+            'last_name': last_name,
+            'position': position,
+            'company_name': company_name
+        }
+
+        # Render templates with Jinja2
+        email_text = render_email_template(email_text_template, template_variables)
+        email_html = render_email_template(email_html_template, template_variables)
+
+        # Send email
+        try:
+            client = get_agentmail_client()
+            sent_message = client.inboxes.messages.send(
+                inbox_id='hrbot@agentmail.to',
+                to=email,
+                labels=["firstitw", "scheduling", _application_key(application_id)],
+                subject=f"Interview Invitation - {position} Position",
+                text=email_text,
+                html=email_html
+            )
+            logger.info(f"Email sent successfully with ID: {sent_message.message_id}")
+            logger.info(f"Email sent and application created: {application_id}")
+            return InitialMeetingResponse(application_id = application_id)
+
+        except Exception as e:
+            logger.error(f"Error sending email: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Application created but email failed: {application_id}"
+            )
+
+    @staticmethod
+    async def receive_email_notification(req: Request, agent_manager: AgentManager):
+        """
+        Webhook endpoint to receive incoming email notifications.
+
+        Handles email replies and processes them using the email agent.
+        """
+        # TODO: Import or implement get_application, is_application, processed_messages, email_agent_executor, process_and_reply
+        payload = await req.json()
+        event_type = payload.get('type') or payload.get('event_type')
+        logger.info(f"Received payload: {payload}")
+
+        # Ignore outgoing messages
+        if event_type == 'message.sent':
+            return "Ignoring outgoing message"
+
+        message = payload.get('message', {})
+        message_id = message.get('message_id')
+        inbox_id = message.get('inbox_id')
+        from_field = message.get('from_', '') or message.get('from', '')
+
+        collection = get_agenda_collection( agent_manager.couchbase_client.cluster)
+
+        labels = payload.get('thread', {}).get('labels', [])
+        application_key = list(filter(is_application, labels)).pop()
+        application = get_application(collection, application_key)
+
+        logger.info(f"Retrieved application: {application}")
+
+        # Validate required fields
+        if not message_id or not inbox_id or not from_field:
+            return "fields are invalid"
+
+        # prevent duplicate
+        if message_id in agent_manager.processed_messages:
+            return "duplicate message"
+        agent_manager.processed_messages.add(message_id)
+
+        subject = message.get('subject', '(no subject)')
+
+        if agent_manager.email_agent_executor is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Agent not initialized. Please check server logs and restart."
+            )
+
+        # Process in background thread and return immediately
+        thread = threading.Thread(
+            target=agent_manager.process_and_reply,
+            args=(agent_manager.email_agent_executor, message_id, inbox_id, from_field, subject, message, application, application_key)
+        )
+        thread.daemon = True
+        thread.start()
+
+        return "OK"
+
+@staticmethod
+def is_application(s):
+    return s.startswith("application:")

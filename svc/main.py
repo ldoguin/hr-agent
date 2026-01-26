@@ -2,12 +2,14 @@ from contextlib import asynccontextmanager
 import os
 import logging
 import httpx
+import uuid
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse, Response
+from typing import Any, Dict, List
 
 from starlette.middleware.cors import CORSMiddleware
+from svc.core.ws import ConnectionManager
 
-from svc.core import auth
 from svc.routes import views
 from svc.core.logger import configure_logger
 from svc.core.agent import AgentManager
@@ -16,6 +18,10 @@ from svc.core.config import CB_CONN_STRING, CB_USERNAME, CB_PASSWORD, DEFAULT_BU
 # Configure logging at module level
 configure_logger()
 logger = logging.getLogger("hrapp" )
+
+# Global WebSocket session storage
+websocket_sessions: Dict[str, WebSocket] = {}
+active_connections = set()
 
 # Startup and shutdown events
 async def init_couchbase():
@@ -36,7 +42,7 @@ async def init_agent(couchbase_client):
     logger.info("🚀 Starting Agentic HR API Server...")
     # Initialize the agent manager
     agent_manager = AgentManager(couchbase_client)
-    agent_manager.setup_environment()
+    await agent_manager.setup_environment()
     return agent_manager
 
 
