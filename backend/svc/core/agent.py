@@ -15,7 +15,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from svc.core.config import (
     DEFAULT_RESUME_DIR, AGENTMAIL_API_KEY, DEFAULT_AGENDA_COLLECTION, DEFAULT_BUCKET, DEFAULT_SCOPE, DEFAULT_COLLECTION, DEFAULT_INDEX,
     CAPELLA_API_ENDPOINT, CAPELLA_API_EMBEDDINGS_KEY, CAPELLA_API_EMBEDDING_MODEL, CAPELLA_API_LLM_KEY, CAPELLA_API_LLM_MODEL,
-    OPENAI_API_KEY, INBOX_USERNAME, PORT, WEBHOOK_DOMAIN
+    OPENAI_API_KEY, INBOX_USERNAME, PORT, WEBHOOK_DOMAIN, SERVER_URL
 )
 from svc.core.db import CouchbaseClient, test_capella_connectivity
 from agentc import Catalog
@@ -474,12 +474,15 @@ Action Input: """
                 raise
 
         # Start ngrok tunnel
-        listener = await ngrok.forward(PORT, domain=WEBHOOK_DOMAIN, authtoken_from_env=True)
-
+        if SERVER_URL == "":
+            listener = await ngrok.forward(PORT, domain=WEBHOOK_DOMAIN, authtoken_from_env=True)
+            listener_url = listener.url()
+        else:
+            listener_url = SERVER_URL
         # Create webhook (or get existing one)
         try:
             webhook = client.webhooks.create(
-                url=f"{listener.url()}/webhook/agentmail",
+                url=f"{listener_url}/webhook/agentmail",
                 event_types=["message.received"],
                 inbox_ids=[inbox.inbox_id],
                 client_id=f"{INBOX_USERNAME}-webhook"
@@ -494,7 +497,7 @@ Action Input: """
 
         print(f"\n✓ Setup complete!")
         print(f"Inbox: {inbox.inbox_id}")
-        print(f"Webhook: {listener}/webhook/agentmail\n")
+        print(f"Webhook: {listener_url}/webhook/agentmail\n")
 
         return inbox, listener
 
