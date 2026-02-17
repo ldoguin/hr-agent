@@ -3,7 +3,6 @@
 #################################################
 
 [project]
-requires-python = ">=3.11"
 name = "fastapi-nano"
 version = "0.1.0"
 description = "A minimal FastAPI project template."
@@ -11,12 +10,14 @@ readme = "README.md"
 keywords = ["fastapi", "template", "minimal", "docker", "cookiecutter"]
 license = {file = "LICENSE"}
 authors = [{name = "Redowan Delowar", email = "redowan.nafi@gmail.com"}]
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "agentc>=1.0.0",
     "agentc-langchain>=1.0.0",
     "agentmail>=0.2.1",
     "bcrypt>=4.2.0",
     "couchbase>=4.5.0",
+    "extra-platforms<9.0.0",
     "fastapi>=0.115.4",
     "gunicorn>=23.0.0",
     "httptools>=0.7.1",
@@ -100,3 +101,4 @@ console_output_style = "progress"
 
 [tool.setuptools.packages.find]
 where = ["."]
+
