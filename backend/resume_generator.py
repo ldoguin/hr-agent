@@ -62,58 +62,349 @@ from reportlab.platypus import (
 FIRST_NAMES = [
     "Alex", "Jordan", "Taylor", "Casey", "Riley", "Morgan", "Jamie", "Avery",
     "Cameron", "Quinn", "Drew", "Parker", "Emerson", "Reese", "Finley",
+    "Blake", "Hayden", "Logan", "Carter", "Sage", "Rowan", "Phoenix", "River",
+    "Skyler", "Aidan", "Jesse", "Mackenzie", "Harper", "Elliot", "Nico",
+    "Valentina", "Isabella", "Sofia", "Camila", "Gabriela", "Lucia", "Carla",
+    "Ana", "Maria", "Elena", "Cristina", "Monica", "Patricia", "Silvia",
+    "Hiroshi", "Kenji", "Takeshi", "Yuki", "Haruki", "Satoshi", "Akira",
+    "Wei", "Li", "Zhang", "Chen", "Liu", "Yang", "Xu", "Huang", "Zhao",
+    "Ahmed", "Mohammed", "Ali", "Omar", "Youssef", "Hassan", "Karim", "Samir",
+    "Olga", "Natalia", "Ekaterina", "Anastasia", "Marina", "Svetlana", "Irina",
+    "Lars", "Anders", "Johan", "Erik", "Magnus", "Sven", "Bjorn", "Nils",
+    "Luca", "Matteo", "Alessandro", "Francesco", "Antonio", "Giovanni", "Marco",
+    "Juan", "Carlos", "Miguel", "Javier", "Jose", "Francisco", "Pedro", "Luis",
 ]
 LAST_NAMES = [
     "Nguyen", "Martin", "Bernard", "Dubois", "Lefevre", "Garcia", "Rossi",
     "Patel", "Kim", "Singh", "Lopez", "Hernandez", "Kowalski", "Andersen",
-    "Novak",
+    "Novak", "Sato", "Suzuki", "Takahashi", "Tanaka", "Watanabe", "Ito",
+    "Zhang", "Li", "Wang", "Chen", "Liu", "Yang", "Huang", "Zhao", "Wu",
+    "Ahmed", "Mohammed", "Ali", "Hassan", "Khan", "Abdullah", "Ibrahim", "Saleh",
+    "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller",
+    "Davis", "Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez", "Wilson",
+    "Anderson", "Thomas", "Taylor", "Moore", "Jackson", "Martin", "Lee",
+    "Perez", "Thompson", "White", "Harris", "Sanchez", "Clark", "Ramirez",
+    "Lewis", "Robinson", "Walker", "Young", "Allen", "King", "Wright",
+    "Scott", "Torres", "Nguyen", "Hill", "Flores", "Green", "Adams", "Nelson",
+    "Baker", "Hall", "Rivera", "Campbell", "Mitchell", "Carter", "Roberts",
+    "Gomez", "Phillips", "Evans", "Turner", "Diaz", "Parker", "Cruz", "Edwards",
+    "Collins", "Reyes", "Stewart", "Morris", "Morales", "Murphy", "Cook",
+    "Rogers", "Gutierrez", "Ortiz", "Morgan", "Cooper", "Peterson", "Bailey",
+    "Reed", "Kelly", "Howard", "Ramos", "Kim", "Cox", "Ward", "Richardson",
+    "Watson", "Brooks", "Chavez", "Wood", "Mendoza", "Ruiz", "Hughes", "Price",
+    "Alvarez", "Castillo", "Sanders", "Gonzales", "Harrison", "Fernandez",
+    "Castillo", "Schmidt", "Muller", "Schneider", "Fischer", "Weber", "Meyer",
+    "Wagner", "Becker", "Schulz", "Hoffmann", "Schwarz", "Klein", "Richter",
+    "Braun", "Hofmann", "Koch", "Gonzalez", "Gomez", "Fernandez", "Torres",
+    "Diaz", "Perez", "Sanchez", "Ramirez", "Vargas", "Mendoza", "Castro",
+    "Rojas", "Silva", "Romero", "Suarez", "Jimenez", "Cruz", "Lopez", "Gomez",
+    "Peterson", "Johansson", "Karlsson", "Nilsson", "Eriksson", "Larsson",
+    "Olsson", "Persson", "Svensson", "Gustafsson", "Pettersson", "Jonsson",
+    "Jansson", "Hansson", "Jensen", "Nielsen", "Hansen", "Pedersen", "Andersen",
+    "Christensen", "Larsen", "Sorensen", "Rasmussen", "Ivanov", "Petrov",
+    "Sidorov", "Smirnov", "Kuznetsov", "Popov", "Vasiliev", "Romanov", "Nikolaev",
+    "Sergeev", "Pavlov", "Stepanov", "Kuzmina", "Ivanova", "Petrova", "Sidorova",
+    "Moreau", "Leroy", "Bertrand", "Dupont", "Martin", "Simon", "Durand",
+    "Michel", "Lefevre", "Lopez", "Garcia", "Sanchez", "Martin", "Gonzalez",
+    "Rodriguez", "Fernandez", "Lopez", "Gomez", "Martin", "Jimenez", "Sanchez",
+    "Perez", "Garcia", "Gonzalez", "Rodriguez", "Fernandez", "Lopez", "Gomez",
 ]
 
 CITIES = [
-    "Paris, FR", "Lyon, FR", "Berlin, DE", "Amsterdam, NL", "London, UK",
-    "Dublin, IE", "Barcelona, ES", "Lisbon, PT", "Zurich, CH", "Stockholm, SE",
+    # France
+    "Paris, FR", "Lyon, FR", "Marseille, FR", "Toulouse, FR", "Nantes, FR",
+    "Bordeaux, FR", "Lille, FR", "Strasbourg, FR", "Rennes, FR", "Grenoble, FR",
+    # Germany
+    "Berlin, DE", "Munich, DE", "Hamburg, DE", "Frankfurt, DE", "Cologne, DE",
+    "Stuttgart, DE", "Dusseldorf, DE", "Leipzig, DE", "Nuremberg, DE", "Dresden, DE",
+    # Netherlands & Belgium
+    "Amsterdam, NL", "Rotterdam, NL", "The Hague, NL", "Utrecht, NL", "Eindhoven, NL",
+    "Brussels, BE", "Antwerp, BE", "Ghent, BE",
+    # UK & Ireland
+    "London, UK", "Manchester, UK", "Edinburgh, UK", "Bristol, UK", "Birmingham, UK",
+    "Leeds, UK", "Glasgow, UK", "Cambridge, UK", "Oxford, UK",
+    "Dublin, IE", "Cork, IE", "Galway, IE",
+    # Spain & Portugal
+    "Barcelona, ES", "Madrid, ES", "Valencia, ES", "Seville, ES", "Bilbao, ES",
+    "Lisbon, PT", "Porto, PT",
+    # Switzerland & Austria
+    "Zurich, CH", "Geneva, CH", "Basel, CH", "Bern, CH",
+    "Vienna, AT", "Graz, AT",
+    # Nordics
+    "Stockholm, SE", "Gothenburg, SE", "Malmo, SE",
+    "Copenhagen, DK", "Aarhus, DK",
+    "Oslo, NO", "Bergen, NO",
+    "Helsinki, FI", "Espoo, FI",
+    "Reykjavik, IS",
+    # Italy
+    "Milan, IT", "Rome, IT", "Turin, IT", "Florence, IT", "Bologna, IT",
+    # Poland & Czech Republic
+    "Warsaw, PL", "Krakow, PL", "Wroclaw, PL", "Gdansk, PL",
+    "Prague, CZ", "Brno, CZ",
+    # US
+    "San Francisco, US", "New York, US", "Seattle, US", "Austin, US", "Boston, US",
+    "Chicago, US", "Los Angeles, US", "Denver, US", "Atlanta, US", "Miami, US",
+    "Portland, US", "San Diego, US", "Washington DC, US", "Minneapolis, US",
+    # Canada
+    "Toronto, CA", "Vancouver, CA", "Montreal, CA", "Ottawa, CA", "Calgary, CA",
+    # Asia-Pacific
+    "Tokyo, JP", "Osaka, JP", "Fukuoka, JP",
+    "Singapore, SG",
+    "Sydney, AU", "Melbourne, AU", "Brisbane, AU",
+    "Seoul, KR", "Busan, KR",
+    "Bangalore, IN", "Hyderabad, IN", "Pune, IN", "Mumbai, IN", "Chennai, IN",
+    "Taipei, TW",
+    "Hong Kong, HK",
+    "Auckland, NZ",
+    # Other
+    "Tel Aviv, IL",
+    "Dubai, AE",
+    "Cape Town, ZA", "Johannesburg, ZA",
+    "Sao Paulo, BR", "Buenos Aires, AR",
+    "Mexico City, MX",
 ]
-EMAIL_DOMAINS = ["example.com", "mail.com", "proton.me", "company.dev"]
-PHONE_PREFIXES = ["+33 6", "+33 7", "+44 7", "+49 15", "+31 6", "+34 6", "+351 9"]
+EMAIL_DOMAINS = [
+    "example.com", "mail.com", "proton.me", "company.dev",
+    "gmail.com", "outlook.com", "icloud.com", "hey.com",
+    "dev.io", "eng.io", "tech.co", "work.dev",
+    "fastmail.com", "tutanota.com", "pm.me",
+    "live.com", "yahoo.com", "zoho.com",
+]
+PHONE_PREFIXES = [
+    # France
+    "+33 6", "+33 7",
+    # UK
+    "+44 7",
+    # Germany
+    "+49 15", "+49 16", "+49 17",
+    # Netherlands
+    "+31 6",
+    # Spain
+    "+34 6",
+    # Portugal
+    "+351 9",
+    # Belgium
+    "+32 4",
+    # Switzerland
+    "+41 7",
+    # Sweden
+    "+46 7",
+    # Norway
+    "+47 4", "+47 9",
+    # Denmark
+    "+45 2", "+45 3",
+    # Finland
+    "+358 4", "+358 5",
+    # Italy
+    "+39 3",
+    # Poland
+    "+48 5", "+48 6",
+    # Ireland
+    "+353 8",
+    # Austria
+    "+43 6",
+    # US / Canada
+    "+1 415", "+1 212", "+1 206", "+1 512", "+1 617",
+    "+1 312", "+1 213", "+1 416", "+1 604",
+    # India
+    "+91 9", "+91 8",
+    # Singapore
+    "+65 8", "+65 9",
+    # Australia
+    "+61 4",
+    # Japan
+    "+81 9",
+    # South Korea
+    "+82 1",
+    # Israel
+    "+972 5",
+    # UAE
+    "+971 5",
+    # Brazil
+    "+55 11",
+]
 
 ROLE_TITLES = [
-    "Software Engineer", "Senior Software Engineer", "Backend Engineer",
-    "Full Stack Engineer", "Platform Engineer", "Site Reliability Engineer",
-    "Data Engineer", "Machine Learning Engineer", "DevOps Engineer",
-    "Security Engineer", "Frontend Engineer",
+    # Individual contributor - general
+    "Software Engineer", "Senior Software Engineer", "Staff Software Engineer",
+    "Principal Software Engineer", "Distinguished Engineer",
+    "Senior Staff Software Engineer", "Principal Engineer II",
+    "Software Engineer II", "Software Engineer III",
+    # Specialisations - backend
+    "Backend Engineer", "Senior Backend Engineer", "Staff Backend Engineer",
+    "API Engineer", "Microservices Engineer", "Backend Platform Engineer",
+    # Specialisations - frontend
+    "Frontend Engineer", "Senior Frontend Engineer", "Staff Frontend Engineer",
+    "UI Engineer", "Web Engineer", "React Engineer",
+    "Frontend Infrastructure Engineer", "Web Performance Engineer",
+    # Full stack
+    "Full Stack Engineer", "Senior Full Stack Engineer",
+    "Full Stack Developer", "Software Developer",
+    # Mobile
+    "Mobile Engineer", "iOS Engineer", "Android Engineer",
+    "Senior Mobile Engineer", "Staff Mobile Engineer",
+    "React Native Engineer", "Flutter Engineer",
+    "Mobile Platform Engineer", "Mobile SDK Engineer",
+    # Embedded / systems
+    "Embedded Systems Engineer", "Systems Engineer", "Firmware Engineer",
+    "Low-Level Systems Engineer", "Kernel Engineer",
+    # Platform / infra
+    "Platform Engineer", "Senior Platform Engineer", "Staff Platform Engineer",
+    "Infrastructure Engineer", "Cloud Infrastructure Engineer",
+    "Site Reliability Engineer", "Senior Site Reliability Engineer",
+    "Production Engineer", "Cloud Engineer", "Senior Cloud Engineer",
+    "DevOps Engineer", "Senior DevOps Engineer",
+    "Build & Release Engineer", "Release Engineer",
+    "Infrastructure Automation Engineer",
+    # Data & analytics
+    "Data Engineer", "Senior Data Engineer", "Staff Data Engineer",
+    "Analytics Engineer", "Senior Analytics Engineer",
+    "Business Intelligence Engineer", "Data Platform Engineer",
+    "Streaming Data Engineer", "Data Infrastructure Engineer",
+    "ETL Engineer", "Data Warehouse Engineer",
+    # AI / ML
+    "Machine Learning Engineer", "Senior Machine Learning Engineer",
+    "ML Platform Engineer", "AI/ML Engineer",
+    "Data Scientist", "Senior Data Scientist", "Applied Scientist",
+    "Research Engineer", "Research Scientist",
+    "MLOps Engineer", "Computer Vision Engineer", "NLP Engineer",
+    "LLM Engineer", "Generative AI Engineer", "AI Infrastructure Engineer",
+    "Recommendation Systems Engineer", "Ranking Engineer",
+    # Security
+    "Security Engineer", "Senior Security Engineer", "Staff Security Engineer",
+    "Application Security Engineer", "AppSec Engineer",
+    "Cloud Security Engineer", "Infrastructure Security Engineer",
+    "Security Software Engineer", "Product Security Engineer",
+    "Penetration Tester", "Security Analyst",
+    "Cryptography Engineer", "Identity & Access Engineer",
+    # Quality & testing
+    "Software Engineer in Test", "Senior Software Engineer in Test",
+    "QA Engineer", "Senior QA Engineer", "QA Automation Engineer",
+    "Automation Engineer", "Performance Test Engineer",
+    "Quality Engineer", "Reliability Test Engineer",
+    # Specialised IC
+    "API Platform Engineer", "Developer Experience Engineer",
+    "Database Engineer", "Senior Database Engineer",
+    "Search Engineer", "Payments Engineer", "Commerce Engineer",
+    "Distributed Systems Engineer", "Observability Engineer",
+    "Performance Engineer", "Reliability Engineer",
+    "Networking Engineer", "Storage Engineer",
+    "Developer Productivity Engineer", "Internal Tools Engineer",
+    "Developer Tools Engineer", "SDK Engineer",
+    "Compiler Engineer", "Runtime Engineer",
+    "Open Source Engineer", "Ecosystem Engineer",
+    # Leadership / management
+    "Tech Lead", "Senior Tech Lead", "Technical Lead",
+    "Engineering Manager", "Senior Engineering Manager",
+    "Director of Engineering", "Senior Director of Engineering",
+    "VP of Engineering", "SVP of Engineering", "CTO",
+    "Head of Platform", "Head of Data Engineering",
+    "Head of Frontend", "Head of Backend",
+    "Head of Infrastructure", "Head of Security",
+    "Head of Developer Experience", "Group Engineering Manager",
+    "Engineering Lead", "Principal Engineer",
+    # Product / design-adjacent
+    "Product Engineer", "Growth Engineer", "Founding Engineer",
+    "Solutions Engineer", "Integration Engineer",
+    "Technical Program Manager", "Staff Technical Program Manager",
 ]
 
 SUMMARY_TEMPLATES = [
     "Tech worker with {years}+ years building {domain} systems. Strong in {focus} with a track record of shipping reliable products and improving developer velocity.",
     "Engineer with {years}+ years of experience in {domain}. Focused on {focus}, pragmatic architecture, and measurable outcomes.",
     "{role} with {years}+ years delivering {domain} solutions. Known for {focus} and cross-functional collaboration.",
+    "Passionate {role} with {years}+ years in {domain}. Expertise in {focus}, scaling systems, and mentoring engineers.",
+    "Hands-on {role} with {years}+ years of industry experience in {domain}. Champion of {focus} and continuous improvement.",
+    "Versatile engineer with {years}+ years spanning {domain} and beyond. Driven by {focus} and a bias for pragmatic solutions.",
+    "{years}+ year veteran of {domain} engineering. Deep specialization in {focus}; passionate about developer experience and system reliability.",
+    "Builder and problem-solver with {years}+ years in {domain}. Committed to {focus}, clean APIs, and shipping with confidence.",
+    "{role} with a {years}+ year track record in {domain}. Focused on {focus}, technical excellence, and high-impact delivery.",
+    "Curious and delivery-focused {role} with {years}+ years in {domain}. Known for {focus}, strong ownership, and pragmatic trade-offs.",
 ]
 
 DOMAINS = [
     "B2B SaaS", "fintech", "e-commerce", "healthtech", "developer tooling",
     "data platforms", "observability", "payments", "logistics", "media streaming",
+    "adtech", "edtech", "legaltech", "proptech", "insuretech",
+    "open-source infrastructure", "gaming", "cybersecurity", "IoT", "autonomous systems",
+    "supply chain", "real estate tech", "climate tech", "HR tech", "martech",
+    "embedded finance", "crypto / Web3", "retail tech", "travel tech", "foodtech",
 ]
+
 FOCUS_AREAS = [
     "distributed systems", "cloud infrastructure", "API design", "data pipelines",
     "performance tuning", "security hardening", "MLOps", "CI/CD automation",
     "product-minded engineering", "incident response",
+    "platform reliability", "developer experience", "cost optimisation",
+    "event-driven architecture", "microservices design", "zero-downtime deployments",
+    "data governance", "real-time processing", "shift-left testing",
+    "infrastructure as code", "chaos engineering", "capacity planning",
+    "service mesh adoption", "multi-cloud strategy", "edge computing",
+    "privacy engineering", "accessibility engineering", "mobile performance",
 ]
 
 SKILL_BUCKETS = {
-    "Languages": ["Python", "TypeScript", "Go", "Java", "Kotlin", "C#", "SQL", "Bash"],
-    "Frameworks": ["Node.js", "FastAPI", "Spring Boot", "React", "Next.js", "Django", "gRPC"],
-    "Cloud": ["AWS", "GCP", "Azure", "Terraform", "Kubernetes", "Docker", "Helm"],
-    "Data": ["PostgreSQL", "Redis", "Kafka", "BigQuery", "Snowflake", "Airflow", "dbt"],
-    "Practices": ["TDD", "DDD", "Clean Architecture", "Observability", "SRE", "Threat Modeling"],
+    "Languages": [
+        "Python", "TypeScript", "Go", "Java", "Kotlin", "C#", "SQL", "Bash",
+        "Rust", "C++", "Ruby", "Scala", "Elixir", "Swift", "Dart", "R",
+        "JavaScript", "PHP", "Lua", "Groovy", "Haskell", "Clojure",
+    ],
+    "Frameworks": [
+        "Node.js", "FastAPI", "Spring Boot", "React", "Next.js", "Django", "gRPC",
+        "Express.js", "NestJS", "Flask", "Gin", "Echo", "Fiber", "Actix",
+        "Vue.js", "Angular", "Svelte", "Remix", "Astro", "SvelteKit",
+        "Rails", "Phoenix", "Ktor", "Micronaut", "Quarkus", "Axum",
+        "GraphQL", "tRPC", "Temporal", "Celery", "Sidekiq",
+    ],
+    "Cloud": [
+        "AWS", "GCP", "Azure", "Terraform", "Kubernetes", "Docker", "Helm",
+        "Pulumi", "Ansible", "ArgoCD", "Flux", "Istio", "Linkerd",
+        "Prometheus", "Grafana", "Datadog", "New Relic", "Splunk",
+        "Cloudflare", "Vercel", "Fly.io", "Render", "Railway",
+        "AWS Lambda", "GCP Cloud Run", "Azure Functions",
+        "OpenTelemetry", "Jaeger", "Loki", "Tempo",
+    ],
+    "Data": [
+        "PostgreSQL", "Redis", "Kafka", "BigQuery", "Snowflake", "Airflow", "dbt",
+        "MySQL", "MongoDB", "Cassandra", "Elasticsearch", "ClickHouse", "DuckDB",
+        "Spark", "Flink", "Debezium", "Iceberg", "Delta Lake", "Hudi",
+        "Redshift", "Databricks", "Fivetran", "Stitch", "Airbyte",
+        "RabbitMQ", "NATS", "Pulsar", "EventBridge", "Kinesis",
+        "Pinecone", "Weaviate", "Qdrant", "pgvector",
+    ],
+    "Practices": [
+        "TDD", "DDD", "Clean Architecture", "Observability", "SRE", "Threat Modeling",
+        "BDD", "Event Storming", "Hexagonal Architecture", "CQRS", "Event Sourcing",
+        "GitOps", "Trunk-Based Development", "Pair Programming", "Mob Programming",
+        "ADR (Architecture Decision Records)", "API-First Design", "Contract Testing",
+        "Chaos Engineering", "Game Days", "Blameless Post-mortems",
+        "Feature Flags", "Progressive Delivery", "Blue-Green Deployments",
+        "Zero-Trust Security", "Supply Chain Security", "DORA Metrics",
+    ],
 }
 
 COMPANIES = [
+    # Original
     "CloudHarbor", "DataSpring", "PayLattice", "StreamForge", "MedNova",
     "LogiPilot", "InsightWorks", "DevBay", "SecureStack", "MarketPulse",
+    # New fictitious tech companies
+    "Nexlify", "Corewave", "Infraloop", "Vaultline", "Edgelayer",
+    "Synapse IO", "Gridlock Labs", "Peakflow", "Argonaut Systems", "Driftwood AI",
+    "Mintbase", "Prism Analytics", "Cobalt Platform", "Wavefront", "Ironclad Data",
+    "Luminary Cloud", "Polaris Infra", "Horizon Payments", "Canopy Health", "Strata Security",
+    "Orbit DevTools", "Cascade SaaS", "Apogee Logistics", "Vertex Media", "Zenith Finance",
+    "Sprout Labs", "Torchlight AI", "Basecamp Platform", "Aether Networks", "Signal Commerce",
+    "Ember AI", "Skyline DevOps", "Paragon Data", "Meridian Health", "Apex Security",
+    "Flux Systems", "Nova Analytics", "Helix Platform", "Pinnacle SaaS", "Starboard Fintech",
 ]
+
 INDUSTRIES = [
     "Fintech", "E-commerce", "Healthtech", "Developer Tools", "Logistics",
     "Media", "Security", "SaaS",
+    "Adtech", "Edtech", "Legaltech", "Proptech", "Insuretech",
+    "Gaming", "IoT", "Climate Tech", "HR Tech", "Martech",
+    "Open Source", "AI / ML", "Crypto / Web3", "Retail Tech", "Travel Tech",
+    "Automotive", "Telecommunications", "Government / Public Sector", "Non-profit Tech",
 ]
 
 DEGREES = [
@@ -122,32 +413,139 @@ DEGREES = [
     ("MSc", "Data Science"),
     ("MSc", "Cybersecurity"),
     ("BSc", "Mathematics"),
+    ("BSc", "Information Systems"),
+    ("BEng", "Computer Engineering"),
+    ("MSc", "Artificial Intelligence"),
+    ("MSc", "Computer Science"),
+    ("MSc", "Software Engineering"),
+    ("BSc", "Statistics"),
+    ("BSc", "Physics"),
+    ("MEng", "Software Engineering"),
+    ("MBA", "Technology Management"),
+    ("PhD", "Computer Science"),
+    ("BSc", "Electrical Engineering"),
+    ("BSc", "Cognitive Science"),
+    ("MSc", "Human-Computer Interaction"),
+    ("BSc", "Data Science"),
+    ("MSc", "Information Security"),
 ]
+
 SCHOOLS = [
-    "Sorbonne Universite", "EPITA", "INSA Lyon", "TU Berlin", "University College Dublin",
-    "Imperial College London", "Universitat Politecnica de Catalunya", "University of Amsterdam",
+    # France
+    "Sorbonne Universite", "EPITA", "INSA Lyon", "Ecole Polytechnique", "CentraleSupelec",
+    "Telecom Paris", "ENPC", "Paris-Saclay", "Grenoble INP",
+    # Germany
+    "TU Berlin", "TU Munich", "KIT (Karlsruhe)", "RWTH Aachen", "TU Dresden",
+    "Hasso Plattner Institute", "TU Darmstadt",
+    # UK & Ireland
+    "University College Dublin", "Imperial College London", "University of Cambridge",
+    "University of Oxford", "University of Edinburgh", "University College London",
+    "University of Manchester", "University of Bristol",
+    # Spain & Portugal
+    "Universitat Politecnica de Catalunya", "Universidad Politecnica de Madrid",
+    "Universidade do Porto",
+    # Nordics
+    "KTH Royal Institute of Technology", "Aalto University", "DTU (Denmark)",
+    "NTNU (Norway)", "Uppsala University",
+    # Netherlands & Belgium
+    "University of Amsterdam", "TU Delft", "KU Leuven", "Ghent University",
+    # Switzerland
+    "ETH Zurich", "EPFL",
+    # Italy & Poland
+    "Politecnico di Milano", "University of Warsaw", "AGH University",
+    # Asia & Americas
+    "National University of Singapore", "IIT Bombay", "University of Toronto",
+    "McGill University", "University of British Columbia",
+    "Carnegie Mellon University", "MIT", "Stanford University",
+    "UC Berkeley", "Georgia Tech",
 ]
 
 PROJECT_NOUNS = [
+    # Original
     "Feature Flag Platform", "Realtime Metrics Pipeline", "Billing Reconciliation",
     "Identity Gateway", "Search Relevance", "Cost Optimizer", "Release Orchestrator",
     "Fraud Detection Service", "Developer Portal", "Data Quality Monitor",
+    # New
+    "Rate Limiting Service", "Notification Fanout System", "Schema Registry",
+    "API Mocking Framework", "Event Replay Engine", "Secrets Manager",
+    "Multi-Region Failover Controller", "Traffic Shadowing Tool",
+    "Observability SDK", "Self-Service Infrastructure Catalog",
+    "License Compliance Scanner", "Dependency Vulnerability Tracker",
+    "AI-Powered On-Call Assistant", "Automated Runbook Engine",
+    "Zero-Downtime Migration Toolkit", "Canary Deployment Operator",
+    "Internal Audit Trail Service", "Unified Logging Aggregator",
+    "Service Mesh Migration Tool", "Distributed Tracing Dashboard",
+    "ML Model Registry", "Feature Store", "Embedding Search Service",
+    "LLM Gateway", "Prompt Versioning System",
+    "Mobile SDK", "Design Token Pipeline", "Accessibility Linter",
 ]
 
 CERTIFICATIONS = [
     "AWS Certified Solutions Architect - Associate",
+    "AWS Certified Solutions Architect - Professional",
+    "AWS Certified Developer - Associate",
+    "AWS Certified SysOps Administrator - Associate",
+    "AWS Certified DevOps Engineer - Professional",
+    "AWS Certified Security - Specialty",
+    "AWS Certified Machine Learning - Specialty",
     "CKA: Certified Kubernetes Administrator",
+    "CKAD: Certified Kubernetes Application Developer",
+    "CKS: Certified Kubernetes Security Specialist",
     "HashiCorp Certified: Terraform Associate",
+    "HashiCorp Certified: Vault Associate",
     "Google Professional Cloud Architect",
+    "Google Professional Data Engineer",
+    "Google Professional Cloud DevOps Engineer",
+    "Google Professional Cloud Security Engineer",
     "Azure Fundamentals (AZ-900)",
+    "Azure Administrator (AZ-104)",
+    "Azure Solutions Architect Expert (AZ-305)",
+    "Azure DevOps Engineer Expert (AZ-400)",
+    "Databricks Certified Associate Developer",
+    "Databricks Certified Data Engineer Associate",
+    "dbt Analytics Engineering Certification",
+    "Confluent Certified Developer for Apache Kafka",
+    "Linux Foundation Certified System Administrator (LFCS)",
+    "Certified Information Systems Security Professional (CISSP)",
+    "CompTIA Security+",
+    "CompTIA Cloud+",
+    "(ISC)2 Certified in Cybersecurity (CC)",
+    "GIAC Security Essentials (GSEC)",
+    "Professional Scrum Master I (PSM I)",
+    "PMI Agile Certified Practitioner (PMI-ACP)",
 ]
 
 LANGUAGES = [
     ("English", "Fluent"),
+    ("English", "Native"),
     ("French", "Native"),
+    ("French", "Fluent"),
+    ("French", "Professional"),
     ("Spanish", "Professional"),
+    ("Spanish", "Native"),
+    ("Spanish", "Fluent"),
     ("German", "Intermediate"),
+    ("German", "Professional"),
+    ("German", "Native"),
     ("Italian", "Intermediate"),
+    ("Italian", "Professional"),
+    ("Portuguese", "Native"),
+    ("Portuguese", "Professional"),
+    ("Dutch", "Intermediate"),
+    ("Dutch", "Professional"),
+    ("Swedish", "Intermediate"),
+    ("Norwegian", "Intermediate"),
+    ("Polish", "Native"),
+    ("Czech", "Intermediate"),
+    ("Russian", "Professional"),
+    ("Russian", "Native"),
+    ("Mandarin", "Intermediate"),
+    ("Mandarin", "Professional"),
+    ("Japanese", "Intermediate"),
+    ("Korean", "Intermediate"),
+    ("Arabic", "Professional"),
+    ("Hindi", "Native"),
+    ("Hindi", "Professional"),
 ]
 
 BULLET_LIBRARY = [
@@ -158,6 +556,19 @@ BULLET_LIBRARY = [
     "Introduced {practice} across the team; increased release frequency by {pct}%.",
     "Partnered with product and security to deliver {thing} without regressions.",
     "Implemented SLOs and dashboards; decreased incident volume by {pct}%.",
+    "Refactored {thing} to use {tech}; reduced {metric} by {pct}% with no downtime.",
+    "Authored internal RFC for {thing}; drove adoption across {pct} engineering teams.",
+    "Mentored {pct} junior engineers through {practice}; two were promoted within the year.",
+    "Established {practice}; onboarding time for new engineers dropped by {pct}%.",
+    "Delivered {thing} ahead of schedule; directly contributed to {outcome}.",
+    "Collaborated with {pct} cross-functional squads to align on {practice}.",
+    "Automated {thing} using {tech}; eliminated {pct}% of manual toil.",
+    "Optimised {thing} query plans; {metric} improved from {from_}ms to {to}ms.",
+    "Ran chaos experiments on {thing}; uncovered and fixed {pct} critical failure modes.",
+    "Rolled out {practice} org-wide; decreased post-deploy incidents by {pct}%.",
+    "Designed {thing} with {tech}; system now handles {from_} req/s at p99 below {to}ms.",
+    "Coordinated with security team to threat-model {thing}; zero high-severity findings at audit.",
+    "Shipped {thing} as open-source; gained {pct}+ GitHub stars within 3 months.",
 ]
 
 THINGS = [
@@ -165,10 +576,139 @@ THINGS = [
     "a payment risk rules engine", "a data lineage service", "a CI/CD pipeline",
     "an authorization service", "a realtime aggregation service", "a search indexing pipeline",
     "a UI component library", "a design system", "a GraphQL BFF layer",
+    "a zero-downtime schema migration tool", "a distributed rate limiter",
+    "a secrets rotation service", "a canary deployment controller",
+    "a multi-region active-active database layer", "a self-healing job scheduler",
+    "a service mesh observability layer", "an AI-assisted on-call bot",
+    "a feature store for ML models", "an LLM prompt management API",
+    "a unified audit trail service", "a cost attribution dashboard",
+    "a developer CLI toolkit", "a contract testing harness",
+    "a mobile offline-sync engine", "a browser extension for internal tooling",
+    "a cross-platform design token pipeline", "a chaos engineering framework",
+    # Additional things
+    "a distributed config management service", "an event-sourced order management system",
+    "a multi-cloud cost governance dashboard", "a zero-trust network access layer",
+    "a self-service ML training pipeline", "a Kubernetes admission controller",
+    "a gRPC transcoding proxy", "an async job processing platform",
+    "a vector similarity search API", "a model serving platform",
+    "a synthetic data generation tool", "a privacy-preserving analytics pipeline",
+    "a GraphQL federation gateway", "a streaming ETL framework",
+    "a no-code workflow automation engine", "a SaaS usage metering service",
+    "a tenant isolation framework", "a database proxy with connection pooling",
+    "a WASM-based plugin system", "a distributed tracing SDK",
+    "an internal platform CLI", "a feature experiment framework",
+    "a SLO alerting engine", "a service dependency mapper",
+    "a dark-launch traffic splitting layer", "a multi-tenant secrets vault",
+    "an API mocking and contract registry", "a cross-region data replication service",
+    "a reactive state management library", "an infrastructure drift detection tool",
 ]
-METRICS = ["p95", "p99", "error rate", "build time", "time-to-recovery", "CPU usage", "query time", "bundle size"]
-PRACTICES = ["code review standards", "trunk-based development", "on-call playbooks", "service ownership", "feature flags"]
-TECHS = ["Kubernetes", "Terraform", "FastAPI", "Go", "TypeScript", "PostgreSQL", "Redis", "Kafka", "gRPC", "React"]
+
+METRICS = [
+    "p95", "p99", "p50", "error rate", "build time", "time-to-recovery",
+    "CPU usage", "query time", "bundle size", "cold start time",
+    "deployment frequency", "mean time to detect (MTTD)",
+    "mean time to resolve (MTTR)", "lead time for changes",
+    "change failure rate", "memory footprint", "network egress cost",
+    "cache hit ratio", "throughput", "availability (uptime)",
+    "API error rate", "database connection pool saturation",
+]
+
+PRACTICES = [
+    "code review standards", "trunk-based development", "on-call playbooks",
+    "service ownership", "feature flags",
+    "blameless post-mortems", "architecture decision records",
+    "contract testing", "chaos engineering", "game days",
+    "pair programming", "mob programming", "event storming",
+    "API-first design", "infrastructure as code",
+    "progressive delivery", "blue-green deployments",
+    "zero-trust security", "threat modelling", "DORA metrics tracking",
+    "dependency review", "shift-left security scanning",
+    # Additional practices
+    "canary releases", "dark launches", "spike-and-stabilize cycles",
+    "internal open-source contribution model", "golden path templates",
+    "service level objectives (SLOs)", "error budget management",
+    "on-call rotations with SLA tracking", "runbook-driven incident response",
+    "automated regression testing", "property-based testing",
+    "mutation testing", "load and stress testing",
+    "capacity reviews", "cost efficiency reviews",
+    "engineering effectiveness metrics", "developer satisfaction surveys",
+    "technical debt sprints", "engineering guilds",
+    "tech radar maintenance", "domain-driven design workshops",
+    "internal tech talks and knowledge sharing", "RFC-driven decision making",
+    "security champions programme", "bug bounty programme",
+    "SOC 2 compliance automation", "GDPR-by-design",
+    "privacy impact assessments", "supply chain security reviews",
+    "weekly SRE reviews", "monthly reliability retrospectives",
+    "quarterly architecture reviews", "continuous profiling",
+    "distributed system walkthroughs", "disaster recovery drills",
+]
+
+TECHS = [
+    # Orchestration & infra
+    "Kubernetes", "Terraform", "Helm", "Docker", "Pulumi", "Ansible",
+    "ArgoCD", "Flux", "Crossplane", "OpenTofu",
+    # Service mesh & networking
+    "Istio", "Linkerd", "Envoy", "Cilium", "Consul",
+    # Observability
+    "OpenTelemetry", "Prometheus", "Grafana", "Datadog", "New Relic",
+    "Jaeger", "Zipkin", "Loki", "Tempo", "Splunk",
+    "Dynatrace", "Honeycomb", "Lightstep",
+    # Databases - relational
+    "PostgreSQL", "MySQL", "SQLite", "CockroachDB", "PlanetScale",
+    # Databases - NoSQL / document
+    "MongoDB", "Cassandra", "DynamoDB", "Couchbase", "FaunaDB",
+    # Databases - columnar / analytics
+    "ClickHouse", "BigQuery", "Snowflake", "Redshift", "DuckDB",
+    "Druid", "Pinot",
+    # Cache / in-memory
+    "Redis", "Memcached", "Valkey", "Hazelcast",
+    # Search
+    "Elasticsearch", "OpenSearch", "Meilisearch", "Typesense",
+    # Streaming & messaging
+    "Kafka", "RabbitMQ", "NATS", "Pulsar", "AWS SQS", "AWS SNS",
+    "Google Pub/Sub", "Azure Service Bus", "Kinesis", "EventBridge",
+    # ETL / data pipeline
+    "Airflow", "dbt", "Spark", "Flink", "Debezium", "Airbyte",
+    "Fivetran", "Stitch", "Dagster", "Prefect", "Mage",
+    # Data lakehouse
+    "Iceberg", "Delta Lake", "Hudi", "Hive Metastore",
+    # ML / AI
+    "PyTorch", "TensorFlow", "scikit-learn", "Hugging Face", "LangChain",
+    "LlamaIndex", "Ray", "MLflow", "Kubeflow", "BentoML",
+    "Triton Inference Server", "ONNX", "vLLM",
+    # Vector databases
+    "Pinecone", "Weaviate", "Qdrant", "Chroma", "pgvector", "Milvus",
+    # Backend frameworks
+    "FastAPI", "Django", "Flask", "Spring Boot", "Gin", "Echo",
+    "Fiber", "Actix", "Axum", "NestJS", "Express.js", "Hono",
+    "Ktor", "Micronaut", "Quarkus", "gRPC", "Temporal", "Celery",
+    # Frontend frameworks
+    "React", "Next.js", "Vue.js", "Nuxt.js", "Angular", "Svelte",
+    "SvelteKit", "Remix", "Astro", "Solid.js", "Qwik",
+    # Mobile
+    "React Native", "Flutter", "Swift", "Kotlin (Android)", "Expo",
+    # Languages (as tech items)
+    "TypeScript", "Go", "Rust", "Python", "Java", "Kotlin",
+    "Elixir", "Scala", "C++", "Ruby",
+    # CI/CD
+    "GitHub Actions", "GitLab CI", "CircleCI", "Jenkins", "Buildkite",
+    "Tekton", "Argo Workflows", "Drone CI",
+    # Security
+    "Vault", "Falco", "OPA (Open Policy Agent)", "Trivy", "Snyk",
+    "Cosign", "SPIRE", "cert-manager",
+    # Cloud-native serverless / PaaS
+    "AWS Lambda", "GCP Cloud Run", "Azure Functions", "Cloudflare Workers",
+    "Vercel", "Fly.io", "Railway", "Render",
+    # API / gateway
+    "Kong", "Traefik", "NGINX", "Envoy Gateway", "AWS API Gateway",
+    "Apigee", "Tyk",
+    # Feature flags / experimentation
+    "LaunchDarkly", "Unleash", "Flagsmith", "Growthbook",
+    # Other tooling
+    "GraphQL", "tRPC", "WebSockets", "Server-Sent Events",
+    "Protocol Buffers", "Avro", "Parquet",
+]
+
 OUTCOMES = [
     "self-serve onboarding for new teams",
     "safer deploys with progressive delivery",
@@ -176,6 +716,41 @@ OUTCOMES = [
     "better auditability and compliance",
     "faster incident triage",
     "faster UI iteration with reusable components",
+    "a 3x reduction in infrastructure spend",
+    "zero-downtime database migrations at scale",
+    "sub-100ms p99 latency for all critical paths",
+    "full traceability across distributed services",
+    "automated compliance evidence collection",
+    "a developer experience score improvement of 40 points",
+    "a 50% reduction in on-call pages",
+    "multi-region failover with RTO under 30 seconds",
+    "self-service environment provisioning in under 5 minutes",
+    "end-to-end encryption for all data in transit and at rest",
+    "a shared platform layer adopted by 8 engineering teams",
+    # Additional outcomes
+    "10x throughput improvement with zero additional hardware",
+    "a fully automated release process with no manual gates",
+    "a unified observability stack across all microservices",
+    "a 70% reduction in time-to-first-deploy for new engineers",
+    "first-class mobile support with offline-first capabilities",
+    "real-time fraud signals processed at under 5ms latency",
+    "a vendor-agnostic infrastructure layer portable across clouds",
+    "a completely serverless data processing layer saving 40% monthly",
+    "an internal platform that eliminated dependency on external consultants",
+    "zero-regression rollouts thanks to contract testing coverage",
+    "a design system adopted by all product squads within one quarter",
+    "automated SOC 2 evidence collection cutting audit prep from weeks to days",
+    "a data mesh architecture enabling domain-driven data ownership",
+    "sub-second search results across 50M records",
+    "a platform SLA of 99.99% sustained over 12 consecutive months",
+    "LLM-powered features shipped to production with guardrails in place",
+    "a cost attribution model revealing 35% of spend was untagged waste",
+    "a shift-left security approach resulting in zero critical CVEs in prod",
+    "continuous deployment to 15 environments with full rollback capability",
+    "a developer portal that consolidated 12 internal wikis into one source of truth",
+    "ML model serving at scale with under 20ms inference latency",
+    "a multi-cloud active-active architecture with automated failover",
+    "GDPR compliance achieved across all user data flows",
 ]
 
 # -----------------------------
@@ -256,6 +831,57 @@ PROFILES = {
             "Cloud": ["AWS", "GCP", "Terraform", "Kubernetes"],
             "Practices": ["Threat Modeling", "Observability"],
             "Languages": ["Python", "Go", "Bash"],
+        },
+    },
+    "mobile": {
+        "titles": ["Mobile Engineer", "iOS Engineer", "Android Engineer", "Full Stack Engineer"],
+        "focus": ["mobile performance", "product-minded engineering", "API design"],
+        "bias": {
+            "Languages": ["Swift", "Kotlin", "TypeScript", "Dart"],
+            "Frameworks": ["React Native", "Flutter", "Next.js"],
+            "Cloud": ["AWS", "Firebase", "Docker"],
+            "Practices": ["TDD", "Observability", "Progressive Delivery"],
+        },
+    },
+    "platform": {
+        "titles": ["Platform Engineer", "Staff Software Engineer", "Infrastructure Engineer", "Developer Experience Engineer"],
+        "focus": ["developer experience", "infrastructure as code", "platform reliability", "CI/CD automation"],
+        "bias": {
+            "Cloud": ["Kubernetes", "Terraform", "AWS", "GCP", "ArgoCD", "Helm", "Pulumi"],
+            "Languages": ["Go", "Python", "Bash", "TypeScript"],
+            "Practices": ["GitOps", "DORA Metrics", "SRE", "Chaos Engineering"],
+            "Data": ["PostgreSQL", "Redis"],
+        },
+    },
+    "analytics": {
+        "titles": ["Analytics Engineer", "Data Engineer", "Software Engineer", "Business Intelligence Engineer"],
+        "focus": ["data pipelines", "data governance", "cost optimisation", "real-time processing"],
+        "bias": {
+            "Languages": ["SQL", "Python", "dbt"],
+            "Data": ["dbt", "BigQuery", "Snowflake", "Redshift", "Airflow", "Databricks", "ClickHouse"],
+            "Cloud": ["GCP", "AWS", "Terraform"],
+            "Practices": ["DDD", "Observability", "DORA Metrics"],
+        },
+    },
+    "ai": {
+        "titles": ["AI/ML Engineer", "Machine Learning Engineer", "Research Engineer", "NLP Engineer"],
+        "focus": ["MLOps", "data pipelines", "developer experience", "performance tuning"],
+        "bias": {
+            "Languages": ["Python", "Rust", "C++"],
+            "Frameworks": ["PyTorch", "FastAPI", "gRPC", "LangChain"],
+            "Data": ["Pinecone", "Weaviate", "Qdrant", "pgvector", "Kafka", "BigQuery"],
+            "Cloud": ["AWS", "GCP", "Kubernetes", "Docker"],
+            "Practices": ["Observability", "Contract Testing", "Feature Flags"],
+        },
+    },
+    "dx": {
+        "titles": ["Developer Experience Engineer", "Platform Engineer", "Staff Software Engineer", "Software Engineer in Test"],
+        "focus": ["developer experience", "CI/CD automation", "infrastructure as code", "shift-left testing"],
+        "bias": {
+            "Languages": ["TypeScript", "Go", "Python", "Bash"],
+            "Frameworks": ["Node.js", "NestJS", "React"],
+            "Cloud": ["GitHub Actions", "Kubernetes", "Docker", "Terraform"],
+            "Practices": ["Trunk-Based Development", "Contract Testing", "DORA Metrics", "Observability"],
         },
     },
 }
