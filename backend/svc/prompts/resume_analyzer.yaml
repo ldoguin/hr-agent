@@ -1,0 +1,35 @@
+record_kind: prompt
+name: resume_analyzer
+description: AI-powered resume analyzer that extracts structured information from resume text
+annotations:
+  category: hr
+  type: analysis
+content: |
+  Analyze this resume and extract structured information. Return ONLY valid JSON with the following structure:
+
+  {{
+      "name": "string",
+      "email": "string",
+      "phone": "string",
+      "location": "string",
+      "years_experience": 5,
+      "skills": ["skill1", "skill2", "skill3"],
+      "technical_skills": ["tech1", "tech2"],
+      "soft_skills": ["soft1", "soft2"],
+      "experience": "string",
+      "education": "string",
+      "summary": "string",
+      "work_history": [
+          {{
+              "company": "string",
+              "title": "string",
+              "duration": "string",
+              "description": "string"
+          }}
+      ]
+  }}
+
+  Resume Text:
+  {resume_text}
+
+  Extract accurate information. Be precise about years of experience and skills.

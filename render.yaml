@@ -1,0 +1,72 @@
+# Render Blueprint for FastAPI Nano Deployment
+# This file defines the infrastructure as code for Render deployment.
+# The backend serves the static frontend files directly.
+# To deploy:
+# 1. Create a Blueprint instance in Render dashboard
+# 2. Connect this repository
+# 3. Upload secret files (see below)
+# 4. Render will automatically provision the service
+
+services:
+  # Single Web Service - Backend serves frontend static files
+  - type: web
+    name: fastapi-nano
+    runtime: python
+    plan: standard
+    buildCommand: ./scripts/build.sh
+    startCommand: ./scripts/start.sh
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13"
+      - key: NODE_VERSION
+        value: "18"
+      - key: WORKERS
+        value: "2"
+      - key: BIND
+        value: "0.0.0.0:8000"
+      - key: TIMEOUT
+        value: "60"
+      - key: KEEPALIVE
+        value: "5"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      # Certificate handling - Option A: Secret file path (recommended)
+      # The secret file is mounted at /etc/secrets/couchbase-root-cert.pem
+      - key: CB_ROOT_CERTIFICATE_PATH
+        value: /etc/secrets/couchbase-root-cert.pem
+      # Secret environment variables - set these in Render dashboard
+      - key: API_SECRET_KEY
+        sync: false
+      - key: API_USERNAME
+        sync: false
+      - key: API_PASSWORD
+        sync: false
+      - key: CB_CONN_STRING
+        sync: false
+      - key: CB_USERNAME
+        sync: false
+      - key: CB_PASSWORD
+        sync: false
+      - key: CB_BUCKET
+        sync: false
+      - key: CAPELLA_API_LLM_KEY
+        sync: false
+      - key: CAPELLA_API_EMBEDDINGS_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: AGENTMAIL_API_KEY
+        sync: false
+      - key: NGROK_AUTHTOKEN
+        sync: false
+      # Option B: Base64-encoded certificate (alternative to secret file)
+      # Generate with: cat cert.pem | base64 -w 0
+      # - key: CB_ROOT_CERTIFICATE_B64
+      #   sync: false
+    healthCheckPath: /health/
+    autoDeploy: true
+    # Secret files - upload these in Render dashboard
+    # Files placed here are available at runtime but not in git
+    # secretFiles:
+    #   - name: couchbase-root-cert.pem
+    #     value: /etc/secrets/couchbase-root-cert.pem

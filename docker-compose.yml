@@ -1,49 +1,79 @@
-services:
-  fnano:
-    restart: unless-stopped
-    env_file:
-      - .env
-    build:
-      context: ./
-      dockerfile: ./dockerfiles/python${PYTHON_VERSION}/Dockerfile
-      labels:
-        - fnano
-    volumes:
-      - type: bind
-        source: .
-        target: /code
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        gunicorn svc.main:app --workers 2 \
-        --worker-class uvicorn.workers.UvicornWorker -b 0.0.0.0:5001
-    ports:
-      - "5001:5001"
+version: '3.8'
 
-  caddy:
-    image: caddy:2-alpine
-    container_name: caddy
-    restart: unless-stopped
-    env_file:
-      - .env
+services:
+  # # Couchbase Database
+  # couchbase:
+  #   image: couchbase/server:latest
+  #   container_name: couchbase-hr
+  #   ports:
+  #     - "8091-8096:8091-8096"
+  #     - "11210:11210"
+  #   environment:
+  #     - COUCHBASE_ADMINISTRATOR_USERNAME=Administrator
+  #     - COUCHBASE_ADMINISTRATOR_PASSWORD=password
+  #     - COUCHBASE_BUCKET=hr_demo
+  #     - COUCHBASE_CLUSTER_NAME=hr-cluster
+  #     - COUCHBASE_INDEX_MEM_QUOTA=256
+  #     - COUCHBASE_FTS_MEM_QUOTA=256
+  #     - COUCHBASE_QUERY_MEM_QUOTA=256
+  #     - COUCHBASE_SERVICES=data,index,query,fts
+  #   volumes:
+  #     - couchbase_data:/opt/couchbase/var
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8091/pools"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 5
+  #     start_period: 40s
+  # Backend API Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hr-backend
     ports:
-      - "5002:5002"
-      - "80:80"
-      - "443:443"
+      - "8000:8000"
+    environment:
+      # - CB_CONN_STRING=couchbase://couchbase
+      # - CB_USERNAME=Administrator
+      # - CB_PASSWORD=password
+      # - DEFAULT_BUCKET=hr_demo
+      - ENVIRONMENT=docker
+      - WORKERS=1
+      - AGENT_CATALOG_CONN_ROOT_CERTIFICATE=/app/burgundydavidluckham-root-certificate.txt
+      - INDEX_DEFINITION_PATH=/app/agentcatalog_index.json
+      # - SERVER_URL=http://localhost:8000/
     volumes:
-      - type: bind
-        source: ./Caddyfile
-        target: /etc/caddy/Caddyfile
-      - type: volume
-        source: caddy_data
-        target: /data
-      - type: volume
-        source: caddy_config
-        target: /config
+      - ./backend/resumes:/app/resumes
+      - ./backend/logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    post_start:
+      - command: ["agentc", "init"]
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: hr-frontend
+    ports:
+      - "3000:80"
     depends_on:
-      - fnano
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 volumes:
-  caddy_data:
-  caddy_config:
+  couchbase_data:
+    driver: local
