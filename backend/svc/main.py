@@ -4,11 +4,11 @@ import logging
 import httpx
 import uuid
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Response, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, StreamingResponse, Response
+from fastapi.responses import JSONResponse, StreamingResponse, Response, FileResponse
+from fastapi.staticfiles import StaticFiles
 from typing import Any, Dict, List
 
 from starlette.middleware.cors import CORSMiddleware
-from svc.core.ws import ConnectionManager
 
 from svc.routes import views
 from svc.core.logger import configure_logger
@@ -103,7 +103,31 @@ def create_app() -> FastAPI:
     )
     #app.include_router(auth.router)
     app.include_router(views.router)
+
+    # Mount static files directory (built frontend)
+    static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
+    if os.path.exists(static_dir):
+        app.mount("/assets", StaticFiles(directory=os.path.join(static_dir, "assets")), name="assets")
+
     return app
 
 
 app = create_app()
+
+
+# Catch-all route to serve the frontend's index.html for non-API routes
+# This must be after all other routes are registered
+@app.get("/{full_path:path}")
+async def serve_frontend(full_path: str):
+    """Serve the frontend's index.html for all non-API routes (SPA support)."""
+    # Skip API routes
+    if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
+    index_path = os.path.join(static_dir, "index.html")
+
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    else:
+        raise HTTPException(status_code=404, detail="Frontend not built")
