@@ -95,9 +95,6 @@ RUN chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
-
-RUN echo "$CBCERT" >> /app/couchbase-root-cert.pem
-
 # Environment variables
 ENV PYTHONFAULTHANDLER=1 \
     PYTHONUNBUFFERED=1 \
@@ -113,6 +110,8 @@ RUN git config --global user.email "bot@couchbase.com" && \
 
 # Initialize git repo and agentc (at build time)
 #RUN git init && git add . && git commit -m "Initial commit" &&     agentc init &&     PYTHONPATH=/app poetry run agentc index svc/prompts/ &&     PYTHONPATH=/app poetry run agentc index svc/tools/ &&     PYTHONPATH=/app poetry run agentc publish
+RUN cat "$CBCERT"
+RUN echo "$CBCERT" >> /app/couchbase-root-cert.pem
 
 # Expose port
 EXPOSE 8000
