@@ -80,6 +80,7 @@ COPY --from=backend-builder /usr/local/bin /usr/local/bin
 # Copy backend application code
 COPY backend/pyproject.toml backend/poetry.lock backend/LICENSE ./
 COPY backend/svc/ ./svc/
+COPY backend/.env ./.env
 COPY backend/email_html_template.html ./
 COPY backend/email_text_template.txt ./
 COPY backend/agentcatalog_index.json ./
@@ -112,11 +113,7 @@ RUN git config --global user.email "bot@couchbase.com" && \
     git config --global user.name "bot"
 
 # Initialize git repo and agentc (at build time)
-RUN git init && git add . && git commit -m "Initial commit" && \
-    agentc init && \
-    PYTHONPATH=/app poetry run agentc index svc/prompts/ && \
-    PYTHONPATH=/app poetry run agentc index svc/tools/ && \
-    PYTHONPATH=/app poetry run agentc publish
+#RUN git init && git add . && git commit -m "Initial commit" &&     agentc init &&     PYTHONPATH=/app poetry run agentc index svc/prompts/ &&     PYTHONPATH=/app poetry run agentc index svc/tools/ &&     PYTHONPATH=/app poetry run agentc publish
 
 # Expose port
 EXPOSE 8000
