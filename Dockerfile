@@ -27,11 +27,6 @@ RUN npm run build
 # Stage 2: Build Backend
 # ==========================================
 FROM python:3.13-slim AS backend-builder
-ARG CBCERT
-ARG AGENT_CATALOG_CONN_STRING
-ARG AGENT_CATALOG_USERNAME
-ARG AGENT_CATALOG_BUCKET
-ARG AGENT_CATALOG_CONN_ROOT_CERTIFICATE
 
 # Python environment variables
 ENV PYTHONFAULTHANDLER=1 \
@@ -64,6 +59,8 @@ COPY backend/pyproject.toml backend/poetry.lock backend/LICENSE ./
 # Install Python dependencies
 RUN poetry install --no-root --without dev
 
+RUN poetry add uvicorn
+
 # ==========================================
 # Stage 3: Final Production Image
 # ==========================================
@@ -95,27 +92,23 @@ COPY --from=frontend-builder /app/frontend/dist ./static
 # Create necessary directories
 RUN mkdir -p logs resumes
 
+# Copy entrypoint script before setting ownership
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Set ownership to non-root user
 RUN chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
+
 # Environment variables
 ENV PYTHONFAULTHANDLER=1 \
     PYTHONUNBUFFERED=1 \
     WORKERS=1 \
-    BIND=0.0.0.0:8000 \
     TIMEOUT=60 \
     KEEPALIVE=5 \
     AGENT_CATALOG_CONN_ROOT_CERTIFICATE=/app/couchbase-root-cert.pem
-
-# Configure git for agentc
-RUN git config --global user.email "bot@couchbase.com" && \
-    git config --global user.name "bot"
-
-# Initialize git repo and agentc (at build time)
-RUN git init && git add . && git commit -m "Initial commit" &&     agentc init &&     PYTHONPATH=/app poetry run agentc index svc/prompts/ &&     PYTHONPATH=/app poetry run agentc index svc/tools/ 
-RUN echo "$CBCERT" >> /app/couchbase-root-cert.pem
 
 # Expose port
 EXPOSE 8000
@@ -124,5 +117,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/')" || exit 1
 
-# Start the application
-CMD ["bash", "-lc", "exec gunicorn -k uvicorn.workers.UvicornWorker -w ${WORKERS} -b ${BIND} --timeout ${TIMEOUT} --keep-alive ${KEEPALIVE} svc.main:app"]
+# Start the application using entrypoint
+ENTRYPOINT [ "/app/entrypoint.sh" ]
+CMD ["bash", "-lc", "exec gunicorn -k uvicorn.workers.UvicornWorker -w 1 -b '0.0.0.0:8000'  svc.main:app"]
