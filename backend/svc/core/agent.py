@@ -1,6 +1,8 @@
 import os
 import logging
 import json
+import uuid
+import threading
 from datetime import datetime
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 import openai
@@ -19,8 +21,22 @@ from svc.core.config import (
 )
 from svc.core.db import CouchbaseClient, test_capella_connectivity
 from agentc import Catalog
+from agentc.span import ToolCallContent, ToolResultContent, UserContent, AssistantContent
+
+try:
+    from agentc_langchain.chat import Callback as LangChainCallback
+    _LANGCHAIN_CALLBACK_AVAILABLE = True
+except ImportError:
+    _LANGCHAIN_CALLBACK_AVAILABLE = False
+    logger_bootstrap = logging.getLogger("uvicorn.error")
+    logger_bootstrap.warning("agentc_langchain not available — LLM-level tracing disabled")
 
 logger = logging.getLogger("uvicorn.error" )
+
+# Thread-local storage for the active request span.
+# Tool wrappers read this to create child spans under the current request
+# rather than independent top-level spans.
+_active_span = threading.local()
 
 # Initialize OpenAI client
 openai_client = openai.OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
@@ -36,7 +52,40 @@ class AgentManager:
         self.llm = None
         self.couchbase_client = couchbase_client
         self.catalog = None
+        self.root_span = None
         self.processed_messages = set()
+
+    def new_span(self, name: str, **kwargs):
+        """Create an independent per-request span with its own session ID.
+
+        Each call produces a new session UUID so requests are separated in the
+        logs and can be queried individually. The span is also stored in
+        thread-local storage so tool wrappers can attach child spans to it.
+        Returns None when the catalog is not initialised.
+        """
+        if self.catalog is None:
+            return None
+        span = self.catalog.Span(name=name, session=str(uuid.uuid4()), **kwargs)
+        _active_span.current = span
+        return span
+
+    def _child_span(self, name: str, **kwargs):
+        """Create a child span under the active request span (thread-local).
+
+        Falls back to a new independent span when no request span is active,
+        e.g. when a tool is called outside a traced request context.
+        """
+        parent = getattr(_active_span, "current", None)
+        if parent is not None:
+            return parent.new(name=name, **kwargs)
+        return self.new_span(name=name, **kwargs)
+
+    @staticmethod
+    def close_span(span) -> None:
+        """Exit a request span and clear the thread-local reference."""
+        if span is not None:
+            span.exit()
+        _active_span.current = None
 
     def setup_ai_services(self, temperature: float = 0.0, use_capella: bool = True):
         """Setup AI services with Capella AI (Priority 1) and OpenAI fallback."""
@@ -133,9 +182,15 @@ class AgentManager:
                 logger.info("🔧 Initializing Agent Catalog v1.0.0...")
                 self.catalog = Catalog()
                 logger.info(f"✅ Agent Catalog initialized (version: {self.catalog.version})")
+                # Root span covers the full application lifetime; child spans are
+                # created per-request via new_span().
+                self.root_span = self.catalog.Span(name="hr_agent")
+                self.root_span.enter()
+                logger.info("✅ Agent Catalog root span created")
             except Exception as catalog_error:
                 logger.error(f"❌ Failed to initialize Agent Catalog: {catalog_error}")
                 self.catalog = None
+                self.root_span = None
 
             # Setup AI services
             try:
@@ -179,6 +234,43 @@ class AgentManager:
             self.couchbase_client = None
             self.catalog = None
 
+
+    def _attach_tracing_callback(self, span_name: str, tools: list | None = None):
+        """Attach an agentc_langchain Callback to self.llm for the given span.
+
+        Returns the child span so callers can pass it to tool wrappers.
+        The callback is appended to self.llm.callbacks in-place.
+
+        LangChain Tool objects don't carry a JSON args_schema, so we convert
+        them to the RequestHeaderContent.Tool format that the Callback expects,
+        using an empty object schema as a fallback.
+        """
+        if not _LANGCHAIN_CALLBACK_AVAILABLE or self.root_span is None:
+            return None
+        child_span = self.root_span.new(name=span_name)
+
+        # Convert LangChain Tool objects to the format agentc_langchain expects.
+        # RequestHeaderContent.Tool requires name, description, and args_schema (dict).
+        header_tools = None
+        if tools:
+            from agentc.span import RequestHeaderContent
+            header_tools = [
+                RequestHeaderContent.Tool(
+                    name=t.name,
+                    description=t.description or "",
+                    args_schema=t.args_schema.schema() if getattr(t, "args_schema", None) else {"type": "object"},
+                )
+                for t in tools
+            ]
+
+        callback = LangChainCallback(span=child_span, tools=header_tools)
+        if self.llm.callbacks is None:
+            self.llm.callbacks = []
+        # Remove any stale callbacks of the same type before adding a fresh one
+        self.llm.callbacks = [c for c in self.llm.callbacks if not isinstance(c, LangChainCallback)]
+        self.llm.callbacks.append(callback)
+        logger.info(f"✅ agentc_langchain Callback attached for span '{span_name}'")
+        return child_span
 
     def create_langchain_agent(self):
         """Create LangChain ReAct agent with candidate search tool from Agent Catalog.
@@ -226,14 +318,42 @@ class AgentManager:
             print(f"   Description: {search_tool_result.meta.description[:80]}...")
             logger.info(f"✅ Loaded tool from Agent Catalog: {search_tool_result.meta.name}")
 
-            # Create tool wrapper that injects embeddings client
+            # Create tool wrapper that injects embeddings client and emits tool-call/result spans
             def search_with_embeddings(job_description: str) -> str:
-                return search_tool_result.func(
-                    job_description=job_description,
-                    num_results=5,
-                    embeddings_client=self.embeddings,
-                    agent_manager=self
-                )
+                call_id = str(uuid.uuid4())
+                span = self._child_span("search_candidates_vector")
+                if span:
+                    span.enter()
+                    span.log(ToolCallContent(
+                        tool_name=search_tool_result.meta.name,
+                        tool_call_id=call_id,
+                        tool_args={"job_description": job_description},
+                    ))
+                try:
+                    result = search_tool_result.func(
+                        job_description=job_description,
+                        num_results=5,
+                        embeddings_client=self.embeddings,
+                        agent_manager=self,
+                    )
+                    if span:
+                        span.log(ToolResultContent(
+                            tool_call_id=call_id,
+                            tool_result=result,
+                            status="success",
+                        ))
+                    return result
+                except Exception as exc:
+                    if span:
+                        span.log(ToolResultContent(
+                            tool_call_id=call_id,
+                            tool_result=str(exc),
+                            status="error",
+                        ))
+                    raise
+                finally:
+                    if span:
+                        span.exit()
 
             tools.append(
                 Tool(
@@ -250,12 +370,39 @@ class AgentManager:
                 print(f"   Description: {analyze_tool_result.meta.description[:80]}...")
                 logger.info(f"✅ Loaded tool from Agent Catalog: {analyze_tool_result.meta.name}")
 
-                # Create tool wrapper for resume analysis
                 def analyze_with_agent_manager(resume_text: str) -> str:
-                    return analyze_tool_result.func(
-                        resume_text=resume_text,
-                        agent_manager=self
-                    )
+                    call_id = str(uuid.uuid4())
+                    span = self._child_span("analyze_resume")
+                    if span:
+                        span.enter()
+                        span.log(ToolCallContent(
+                            tool_name=analyze_tool_result.meta.name,
+                            tool_call_id=call_id,
+                            tool_args={"resume_text": resume_text[:200]},
+                        ))
+                    try:
+                        result = analyze_tool_result.func(
+                            resume_text=resume_text,
+                            agent_manager=self,
+                        )
+                        if span:
+                            span.log(ToolResultContent(
+                                tool_call_id=call_id,
+                                tool_result=result,
+                                status="success",
+                            ))
+                        return result
+                    except Exception as exc:
+                        if span:
+                            span.log(ToolResultContent(
+                                tool_call_id=call_id,
+                                tool_result=str(exc),
+                                status="error",
+                            ))
+                        raise
+                    finally:
+                        if span:
+                            span.exit()
 
                 tools.append(
                     Tool(
@@ -268,17 +415,18 @@ class AgentManager:
                 logger.warning("⚠️ Could not find analyze_resume tool in catalog. It will not be available.")
 
             # Load prompt from catalog using v1.0.0 API
-            # catalog.find() returns a single PromptResult when searching by name
             print("\n🔍 AGENT CATALOG: Loading prompt...")
             prompt_result = self.catalog.find("prompt", name="hr_recruiter_assistant")
             if prompt_result is None:
                 raise ValueError("Could not find hr_recruiter_assistant prompt in catalog. Run 'agentc index' first.")
 
-            # In v1.0.0, prompt_result has: content, tools, output, and meta attributes
             print(f"✅ AGENT CATALOG: Loaded prompt '{prompt_result.meta.name}'")
             print(f"   Content length: {len(prompt_result.content)} chars")
             print("="*50 + "\n")
             logger.info(f"✅ Loaded prompt from Agent Catalog: {prompt_result.meta.name}")
+
+            # Attach LangChain callback for LLM-level tracing (chat completions + tool calls)
+            self._attach_tracing_callback("recruiter_agent", tools=tools)
 
             custom_prompt = PromptTemplate(
                 template=prompt_result.content.strip(),
@@ -360,51 +508,79 @@ Action Input: """
             seam = self.catalog.find("tool", name="verify_meeting_slot_availability")
             delm = self.catalog.find("tool", name="cancel_meeting_timeslot")
 
+            def _traced_tool(catalog_result):
+                """Return a traced wrapper for a catalog tool result."""
+                tool_name = catalog_result.meta.name
+
+                def _wrapper(tool_input: str) -> str:
+                    call_id = str(uuid.uuid4())
+                    span = self._child_span(tool_name)
+                    if span:
+                        span.enter()
+                        span.log(ToolCallContent(
+                            tool_name=tool_name,
+                            tool_call_id=call_id,
+                            tool_args={"input": tool_input},
+                        ))
+                    try:
+                        result = catalog_result.func(tool_input)
+                        if span:
+                            span.log(ToolResultContent(
+                                tool_call_id=call_id,
+                                tool_result=result,
+                                status="success",
+                            ))
+                        return result
+                    except Exception as exc:
+                        if span:
+                            span.log(ToolResultContent(
+                                tool_call_id=call_id,
+                                tool_result=str(exc),
+                                status="error",
+                            ))
+                        raise
+                    finally:
+                        if span:
+                            span.exit()
+
+                return _wrapper
+
             tools = [
                 Tool(
                     name=tool_result.meta.name,
                     description=tool_result.meta.description,
-                    func=tool_result.func,
+                    func=_traced_tool(tool_result),
                 ),
                 Tool(
                     name=addm.meta.name,
                     description=addm.meta.description,
-                    func=addm.func,
+                    func=_traced_tool(addm),
                 ),
                 Tool(
                     name=delm.meta.name,
                     description=delm.meta.description,
-                    func=delm.func,
+                    func=_traced_tool(delm),
                 ),
                 Tool(
                     name=seam.meta.name,
                     description=seam.meta.description,
-                    func=seam.func,
+                    func=_traced_tool(seam),
                 ),
             ]
 
-
             # Load prompt from catalog using v1.0.0 API
-            # catalog.find() returns a single PromptResult when searching by name
             print("\n🔍 AGENT CATALOG: Loading prompt...")
             prompt_result = self.catalog.find("prompt", name="hr_schedule_assistant")
             if prompt_result is None:
                 raise ValueError("Could not find hr_schedule_assistant prompt in catalog. Run 'agentc index' first.")
 
-            # In v1.0.0, prompt_result has: content, tools, output, and meta attributes
             print(f"✅ AGENT CATALOG: Loaded prompt '{prompt_result.meta.name}'")
             print(f"   Content length: {len(prompt_result.content)} chars")
             print("="*50 + "\n")
             logger.info(f"✅ Loaded prompt from Agent Catalog: {prompt_result.meta.name}")
 
-            # custom_prompt = PromptTemplate(
-            #     template=prompt_result.content.strip(),
-            #     input_variables=["input", "agent_scratchpad"],
-            #     partial_variables={
-            #         "tools": "\n".join([f"{tool.name}: {tool.description}" for tool in tools]),
-            #         "tool_names": ", ".join([tool.name for tool in tools]),
-            #     },
-            # )
+            # Attach LangChain callback for LLM-level tracing (chat completions + tool calls)
+            self._attach_tracing_callback("email_agent", tools=tools)
 
             # Create proper prompt template for tool calling agent
             custom_prompt = ChatPromptTemplate.from_messages([
@@ -576,7 +752,7 @@ Action Input: """
                 f"Auto-Reply Agent"
             )
 
-    def process_and_reply(self, email_agent_executor, message_id, inbox_id, from_field, subject, message, application, application_key):
+    def process_and_reply(self, email_agent_executor, message_id, inbox_id, from_field, subject, message, application, application_key, trace_session_id=None):
         """Process incoming message and send reply in background."""
         # Extract sender email and name
         if '<' in from_field and '>' in from_field:
@@ -620,13 +796,32 @@ Action Input: """
             
 
             # Run the agent
-            
-            response = email_agent_executor.invoke({"meeting_id": application_key, "agent_scratchpad":"","today": datetime.today().strftime('%Y-%m-%d'),"thread": message.get('text').strip()})
+            thread_text = message.get('text', '').strip()
 
-            # # Extract the agent's response
-            agent_output = response.get("output", "Could not generate anwser")
-            intermediate_steps = response.get("intermediate_steps", [])
+            # Resume the original session if a trace_session_id was recovered
+            # from the email labels, so this reply is grouped with the initial
+            # send_meeting_request span in the logs.
+            if trace_session_id and self.catalog is not None:
+                span = self.catalog.Span(name="email_reply", session=trace_session_id, sender=sender_email)
+                _active_span.current = span
+            else:
+                span = self.new_span("email_reply", sender=sender_email)
+            if span:
+                span.enter()
+                span.log(UserContent(value=thread_text))
 
+            response = email_agent_executor.invoke({
+                "meeting_id": application_key,
+                "agent_scratchpad": "",
+                "today": datetime.today().strftime('%Y-%m-%d'),
+                "thread": thread_text,
+            })
+
+            agent_output = response.get("output", "Could not generate answer")
+
+            if span:
+                span.log(AssistantContent(value=agent_output))
+                span.exit()
 
             # Get AgentMail client
             client = self.get_agentmail_client()
@@ -648,8 +843,15 @@ Action Input: """
         return template.render(**template_vars)
 
     def close(self):
+        if self.root_span is not None:
+            try:
+                self.root_span.exit()
+            except Exception:
+                pass
         self.agent_executor = None
+        self.email_agent_executor = None
         self.embeddings = None
         self.llm = None
         self.couchbase_client = None
         self.catalog = None
+        self.root_span = None

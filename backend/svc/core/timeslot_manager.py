@@ -53,6 +53,16 @@ def _meeting_key(meeting_id: str) -> str:
     """Generate meeting document key."""
     return f"meeting::{meeting_id}"
 
+def _session_label(session_id: str) -> str:
+    """Generate an email label that carries the trace session ID."""
+    return f"session::{session_id}"
+
+def _is_session_label(label: str) -> bool:
+    return label.startswith("session::")
+
+def _session_id_from_label(label: str) -> str:
+    return label.split("::", 1)[1]
+
 # --------- Candidate Functions --------- #
 
 def upsert_candidate(collection: Collection, email: str, name: str) -> Dict[str, Any]:

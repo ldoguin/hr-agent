@@ -17,7 +17,8 @@ from svc.core.agent import AgentManager
 from agentmail import AgentMail
 from jinja2 import Template
 from svc.core.config import AGENTMAIL_API_KEY
-from svc.core.timeslot_manager import upsert_application, _application_key, get_application, get_candidate_by_email, get_agenda_collection
+from agentc.span import UserContent, AssistantContent
+from svc.core.timeslot_manager import upsert_application, _application_key, get_application, get_candidate_by_email, get_agenda_collection, _session_label, _is_session_label, _session_id_from_label
 from svc.models.models import HealthResponse, JobMatchRequest, JobMatchResponse, ResumeUploadResponse, CandidateResponse, InitialMeetingRequest, InitialMeetingResponse
 from svc.data.resume_loader import extract_text_from_pdf, analyze_resume_with_llm, format_candidate_for_embedding
 from svc.tools.search_candidates_vector import search_candidates_vector
@@ -85,6 +86,11 @@ class HRAPI:
 
             logger.info(f"🔍 Processing job match request: {request.job_description[:100]}...")
 
+            span = agent_manager.new_span("match_candidates")
+            if span:
+                span.enter()
+                span.log(UserContent(value=request.job_description))
+
             # Run the agent with timeout using thread pool
             def run_agent():
                 return agent_manager.agent_executor.invoke({"input": request.job_description})
@@ -123,9 +129,14 @@ class HRAPI:
 
             logger.info(f"✅ Found {len(candidates)} candidates in {query_time:.2f}s")
 
+            reasoning = agent_output if agent_output else "Results extracted from vector search. See candidates below."
+            if span:
+                span.log(AssistantContent(value=reasoning))
+                AgentManager.close_span(span)
+
             return JobMatchResponse(
                 candidates=candidates,
-                agent_reasoning=agent_output if agent_output else "Results extracted from vector search. See candidates below.",
+                agent_reasoning=reasoning,
                 total_found=len(candidates),
                 query_time_seconds=round(query_time, 2),
             )
@@ -255,12 +266,18 @@ class HRAPI:
 
             logger.info(f"📄 Saved resume: {file.filename}")
 
-            # Schedule background processing
+            span = agent_manager.new_span("upload_resume", filename=file.filename)
+            if span:
+                span.enter()
+                span.log(UserContent(value=f"Resume upload: {file.filename}"))
+
+            # Schedule background processing — pass span so it can be closed there
             background_tasks.add_task(
                 HRAPI.process_resume_background,
                 file_path,
                 file.filename,
-                agent_manager
+                agent_manager,
+                span,
             )
 
             return ResumeUploadResponse(
@@ -274,7 +291,7 @@ class HRAPI:
             raise HTTPException(status_code=500, detail=str(e))
 
     @staticmethod
-    async def process_resume_background(file_path: Path, filename: str, agent_manager: AgentManager):
+    async def process_resume_background(file_path: Path, filename: str, agent_manager: AgentManager, span=None):
         """Background task to process uploaded resume."""
         try:
             logger.info(f"🔄 Processing resume in background: {filename}")
@@ -283,6 +300,9 @@ class HRAPI:
             text = extract_text_from_pdf(str(file_path))
             if not text.strip():
                 logger.warning(f"No text extracted from {filename}")
+                if span:
+                    span.log(AssistantContent(value=f"No text extracted from {filename}"))
+                    AgentManager.close_span(span)
                 return
 
             # Analyze with LLM
@@ -309,11 +329,28 @@ class HRAPI:
                 )
 
                 logger.info(f"✅ Successfully processed resume: {filename}")
+                if span:
+                    candidate_name = analysis.get("name", "Unknown")
+                    span.log(AssistantContent(
+                        value=f"Processed and stored resume for {candidate_name}",
+                        extra={
+                            "candidate_name": candidate_name,
+                            "years_experience": analysis.get("years_experience", 0),
+                            "skills_count": len(analysis.get("skills", [])),
+                        },
+                    ))
             else:
                 logger.warning("Cannot store resume - Couchbase client not initialized")
+                if span:
+                    span.log(AssistantContent(value=f"Resume {filename} parsed but not stored — Couchbase unavailable"))
 
         except Exception as e:
             logger.exception(f"❌ Error processing resume {filename}: {e}")
+            if span:
+                span.log(AssistantContent(value=f"Error processing {filename}: {e}"))
+        finally:
+            if span:
+                AgentManager.close_span(span)
 
     @staticmethod
     def list_candidates(agent_manager: AgentManager, limit: int = 10, offset: int = 0) -> List[CandidateResponse]:
@@ -433,6 +470,11 @@ class HRAPI:
 
             logger.info(f"⚡ Direct search request: {request.job_description[:100]}...")
 
+            span = agent_manager.new_span("search_direct")
+            if span:
+                span.enter()
+                span.log(UserContent(value=request.job_description))
+
             # Call the search tool directly
             results = search_candidates_vector(
                 job_description=request.job_description,
@@ -447,9 +489,14 @@ class HRAPI:
 
             logger.info(f"⚡ Direct search found {len(candidates)} candidates in {query_time:.2f}s")
 
+            reasoning = f"Direct vector search completed. Found {len(candidates)} matching candidates based on semantic similarity to your job description."
+            if span:
+                span.log(AssistantContent(value=reasoning))
+                AgentManager.close_span(span)
+
             return JobMatchResponse(
                 candidates=candidates,
-                agent_reasoning=f"Direct vector search completed. Found {len(candidates)} matching candidates based on semantic similarity to your job description.",
+                agent_reasoning=reasoning,
                 total_found=len(candidates),
                 query_time_seconds=round(query_time, 2),
             )
@@ -474,6 +521,11 @@ class HRAPI:
         # Generate unique application ID
         application_id = str(uuid.uuid4())
 
+        span = agent_manager.new_span("send_meeting_request", position=position)
+        if span:
+            span.enter()
+            span.log(UserContent(value=f"Meeting request for {first_name} {last_name} <{email}> — {position} at {company_name}"))
+
         # Create application document in database
         try:
             if agent_manager.couchbase_client is None or agent_manager.couchbase_client.cluster is None:
@@ -497,6 +549,9 @@ class HRAPI:
             logger.info(f"Application document created: {application_id}")
         except Exception as e:
             logger.error(f"Error creating application document: {e}")
+            if span:
+                span.log(AssistantContent(value=f"Failed to create application: {e}"))
+                AgentManager.close_span(span)
             raise HTTPException(
                 status_code=500,
                 detail="Failed to create application document."
@@ -511,6 +566,9 @@ class HRAPI:
                 email_html_template = html_file.read()
         except FileNotFoundError as e:
             logger.error(f"Error reading email template files: {e}")
+            if span:
+                span.log(AssistantContent(value=f"Email template not found: {e}"))
+                AgentManager.close_span(span)
             raise HTTPException(
                 status_code=500,
                 detail="Error reading email template files."
@@ -531,20 +589,35 @@ class HRAPI:
         # Send email
         try:
             client = get_agentmail_client()
+            # Include the trace session ID as a label so the webhook can resume
+            # the same span when the candidate replies.
+            session_id = span.identifier.session if span else None
+            labels = ["firstitw", "scheduling", _application_key(application_id)]
+            if session_id:
+                labels.append(_session_label(session_id))
             sent_message = client.inboxes.messages.send(
                 inbox_id='hrbot@agentmail.to',
                 to=email,
-                labels=["firstitw", "scheduling", _application_key(application_id)],
+                labels=labels,
                 subject=f"Interview Invitation - {position} Position",
                 text=email_text,
                 html=email_html
             )
             logger.info(f"Email sent successfully with ID: {sent_message.message_id}")
             logger.info(f"Email sent and application created: {application_id}")
+            if span:
+                span.log(AssistantContent(
+                    value=f"Invitation sent to {email}",
+                    extra={"application_id": application_id, "message_id": sent_message.message_id, "session_id": session_id},
+                ))
+                AgentManager.close_span(span)
             return InitialMeetingResponse(application_id = application_id)
 
         except Exception as e:
             logger.error(f"Error sending email: {e}")
+            if span:
+                span.log(AssistantContent(value=f"Email failed for application {application_id}: {e}"))
+                AgentManager.close_span(span)
             raise HTTPException(
                 status_code=500,
                 detail=f"Application created but email failed: {application_id}"
@@ -577,6 +650,11 @@ class HRAPI:
         application_key = list(filter(is_application, labels)).pop()
         application = get_application(collection, application_key)
 
+        # Recover the trace session ID embedded in the email labels so the
+        # reply span continues the same session as the original invitation.
+        session_labels = list(filter(_is_session_label, labels))
+        trace_session_id = _session_id_from_label(session_labels[0]) if session_labels else None
+
         logger.info(f"Retrieved application: {application}")
 
         # Validate required fields
@@ -599,7 +677,7 @@ class HRAPI:
         # Process in background thread and return immediately
         thread = threading.Thread(
             target=agent_manager.process_and_reply,
-            args=(agent_manager.email_agent_executor, message_id, inbox_id, from_field, subject, message, application, application_key)
+            args=(agent_manager.email_agent_executor, message_id, inbox_id, from_field, subject, message, application, application_key, trace_session_id)
         )
         thread.daemon = True
         thread.start()
