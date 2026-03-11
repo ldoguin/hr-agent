@@ -59,3 +59,18 @@ class InitialMeetingRequest(BaseModel):
 class InitialMeetingResponse(BaseModel):
     """Response for Initial meeting request."""
     application_id: str
+
+class ConversationGradeResponse(BaseModel):
+    """Result of grading an email scheduling conversation."""
+    session: str
+    log_id: Optional[str] = None        # set when grading a single log entry
+    grade_scope: str = "session"        # "session" | "log"
+    score: int = Field(..., ge=0, le=10)
+    label: str
+    summary: str
+    issues: List[str] = []
+    strengths: List[str] = []
+    off_topic: bool = False
+    anomalies: List[str] = []
+    stored_at: Optional[str] = None
+    error: Optional[str] = None

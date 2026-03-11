@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import BackgroundTasks, File, UploadFile, HTTPException, Request
 from jinja2 import Template
 
-from svc.core.config import DEFAULT_BUCKET, DEFAULT_COLLECTION, DEFAULT_SCOPE, DEFAULT_INDEX, DEFAULT_RESUME_DIR
+from svc.core.config import DEFAULT_BUCKET, DEFAULT_COLLECTION, DEFAULT_SCOPE, DEFAULT_INDEX, DEFAULT_RESUME_DIR, AGENT_CATALOG_BUCKET, AGENT_CATALOG_LOGS_SCOPE, AGENT_CATALOG_LOGS_COLLECTION, AGENT_CATALOG_GRADES_COLLECTION
 from svc.core.agent import AgentManager
 from agentmail import AgentMail
 from jinja2 import Template
@@ -235,6 +235,307 @@ class HRAPI:
         except Exception as e:
             logger.warning(f"Error extracting candidate data: {e}")
             return None
+
+    @staticmethod
+    def get_traces(agent_manager: AgentManager, limit: int = 50, offset: int = 0, session: str = None, date: str = None):
+        """Return agent activity logs from the agentc Couchbase collection.
+
+        Uses two queries so that LIMIT/OFFSET operate at the session level:
+          1. Fetch distinct session IDs (with optional date/session filters).
+          2. Fetch all logs for those sessions in one query.
+
+        Args:
+            session: Filter to a single session ID.
+            date:    ISO date string (YYYY-MM-DD). Filters sessions whose
+                     earliest log falls within that UTC day.
+        """
+        try:
+            from couchbase.options import QueryOptions
+
+            cluster = agent_manager.couchbase_client.cluster
+            if cluster is None:
+                return {"sessions": [], "total": 0}
+
+            # ── Query 1: distinct sessions ────────────────────────────────────
+            # Build WHERE filters that apply to the session-level aggregation.
+            log_filters = ["l.`span` IS NOT MISSING"]
+            params_1: dict = {}
+
+            if session:
+                log_filters.append("l.`span`.`session` = $session")
+                params_1["session"] = session
+
+            if date:
+                log_filters.append("l.`timestamp` >= $day_start AND l.`timestamp` <= $day_end")
+                params_1["day_start"] = f"{date}T00:00:00"
+                params_1["day_end"]   = f"{date}T23:59:59.999"
+
+            where_clause = " AND ".join(log_filters)
+
+            # Group by session, keep the earliest timestamp per session so we
+            # can sort newest-first and paginate correctly.
+            sessions_query = f"""
+                SELECT l.`span`.`session`  AS session,
+                       MIN(l.`timestamp`)  AS started_at,
+                       MIN(l.`span`.`name`) AS span_name
+                FROM `{AGENT_CATALOG_BUCKET}`.`{AGENT_CATALOG_LOGS_SCOPE}`.`{AGENT_CATALOG_LOGS_COLLECTION}` AS l
+                WHERE {where_clause}
+                GROUP BY l.`span`.`session`
+                ORDER BY MIN(l.`timestamp`) DESC
+                LIMIT {int(limit)} OFFSET {int(offset)}
+            """
+
+            session_rows = list(cluster.query(sessions_query, QueryOptions(named_parameters=params_1)))
+
+            if not session_rows:
+                # Also fetch total count for pagination metadata
+                count_query = f"""
+                    SELECT COUNT(DISTINCT l.`span`.`session`) AS total
+                    FROM `{AGENT_CATALOG_BUCKET}`.`{AGENT_CATALOG_LOGS_SCOPE}`.`{AGENT_CATALOG_LOGS_COLLECTION}` AS l
+                    WHERE {where_clause}
+                """
+                count_rows = list(cluster.query(count_query, QueryOptions(named_parameters=params_1)))
+                total = count_rows[0].get("total", 0) if count_rows else 0
+                return {"sessions": [], "total": total}
+
+            session_ids = [r["session"] for r in session_rows]
+
+            # ── Query 2: all logs for the returned sessions ───────────────────
+            # Use IN with positional parameters isn't supported for arrays in
+            # N1QL, so build a literal IN list of quoted UUIDs (safe: UUIDs are
+            # hex + hyphens only).
+            id_list = ", ".join(f'"{sid}"' for sid in session_ids)
+            logs_query = f"""
+                SELECT l.identifier,
+                       l.`span`,
+                       l.`timestamp`,
+                       l.content,
+                       l.annotations
+                FROM `{AGENT_CATALOG_BUCKET}`.`{AGENT_CATALOG_LOGS_SCOPE}`.`{AGENT_CATALOG_LOGS_COLLECTION}` AS l
+                WHERE l.`span`.`session` IN [{id_list}]
+                ORDER BY l.`timestamp` ASC
+            """
+
+            log_rows = list(cluster.query(logs_query))
+
+            # ── Assemble sessions dict preserving query-1 order ───────────────
+            sessions: dict = {r["session"]: {
+                "session":    r["session"],
+                "span_name":  r.get("span_name", []),
+                "started_at": r.get("started_at", ""),
+                "logs":       [],
+            } for r in session_rows}
+
+            for row in log_rows:
+                sid = row.get("span", {}).get("session")
+                if sid in sessions:
+                    sessions[sid]["logs"].append(row)
+
+            # Total distinct sessions matching the filter (for pagination)
+            count_query = f"""
+                SELECT COUNT(DISTINCT l.`span`.`session`) AS total
+                FROM `{AGENT_CATALOG_BUCKET}`.`{AGENT_CATALOG_LOGS_SCOPE}`.`{AGENT_CATALOG_LOGS_COLLECTION}` AS l
+                WHERE {where_clause}
+            """
+            count_rows = list(cluster.query(count_query, QueryOptions(named_parameters=params_1)))
+            total = count_rows[0].get("total", 0) if count_rows else len(sessions)
+
+            # Attach stored grades so the frontend gets everything in one round-trip
+            stored_grades = HRAPI._load_grades(session_ids, agent_manager)
+            for s in sessions.values():
+                sid = s["session"]
+                # Session-level grade
+                s["stored_grade"] = stored_grades.get(sid)
+                # Per-log grades keyed by log identifier
+                s["log_grades"] = {
+                    log["identifier"]: stored_grades[log["identifier"]]
+                    for log in s["logs"]
+                    if log.get("identifier") in stored_grades
+                }
+
+            return {"sessions": list(sessions.values()), "total": total}
+
+        except Exception as e:
+            logger.exception(f"❌ Error fetching traces: {e}")
+            return {"sessions": [], "total": 0, "error": str(e)}
+
+    @staticmethod
+    def _ensure_grades_collection(agent_manager: AgentManager) -> bool:
+        """Create the grades collection and its primary index if they don't exist."""
+        try:
+            from couchbase.exceptions import CollectionAlreadyExistsException, QueryIndexAlreadyExistsException
+            from couchbase.management.queries import CreatePrimaryQueryIndexOptions
+            import time as _time
+
+            cluster = agent_manager.couchbase_client.cluster
+            bucket = cluster.bucket(AGENT_CATALOG_BUCKET)
+            collection_created = False
+
+            try:
+                bucket.collections().create_collection(
+                    AGENT_CATALOG_LOGS_SCOPE,
+                    AGENT_CATALOG_GRADES_COLLECTION,
+                )
+                logger.info(f"✅ Created grades collection: {AGENT_CATALOG_GRADES_COLLECTION}")
+                collection_created = True
+                _time.sleep(2)  # let the collection become addressable
+            except CollectionAlreadyExistsException:
+                pass
+
+            # Always ensure the primary index exists — it may be missing even if
+            # the collection was created in a previous run before this code existed.
+            try:
+                keyspace = f"`{AGENT_CATALOG_BUCKET}`.`{AGENT_CATALOG_LOGS_SCOPE}`.`{AGENT_CATALOG_GRADES_COLLECTION}`"
+                cluster.query(f"CREATE PRIMARY INDEX IF NOT EXISTS ON {keyspace}").execute()
+                if collection_created:
+                    logger.info(f"✅ Created primary index on grades collection")
+            except QueryIndexAlreadyExistsException:
+                pass
+            except Exception as idx_err:
+                # IF NOT EXISTS should prevent this, but log just in case
+                if "already exist" not in str(idx_err).lower():
+                    logger.warning(f"⚠️ Could not create grades primary index: {idx_err}")
+
+            return True
+        except Exception as e:
+            logger.error(f"❌ Could not ensure grades collection: {e}")
+            return False
+
+    @staticmethod
+    def _grades_collection(agent_manager: AgentManager):
+        """Return the grades Couchbase collection, creating it if needed."""
+        HRAPI._ensure_grades_collection(agent_manager)
+        bucket = agent_manager.couchbase_client.cluster.bucket(AGENT_CATALOG_BUCKET)
+        return bucket.scope(AGENT_CATALOG_LOGS_SCOPE).collection(AGENT_CATALOG_GRADES_COLLECTION)
+
+    @staticmethod
+    def _store_grade(grade: dict, agent_manager: AgentManager) -> None:
+        """Upsert a grade document. Key is grade::<scope>::<target_id>."""
+        try:
+            from datetime import datetime as _dt, timezone
+            scope = grade.get("grade_scope", "session")
+            target_id = grade.get("log_id") if scope == "log" else grade.get("session")
+            key = f"grade::{scope}::{target_id}"
+            grade["stored_at"] = _dt.now(timezone.utc).isoformat()
+            col = HRAPI._grades_collection(agent_manager)
+            col.upsert(key, grade)
+            logger.info(f"✅ Grade stored: {key}")
+        except Exception as e:
+            logger.error(f"❌ Failed to store grade: {e}")
+
+    @staticmethod
+    def _load_grades(session_ids: list, agent_manager: AgentManager) -> dict:
+        """Return all stored grades for the given session IDs, keyed by session or log_id.
+
+        Returns an empty dict silently when the grades collection does not exist yet
+        (i.e. no grade has ever been written).
+        """
+        if not session_ids:
+            return {}
+        try:
+            from couchbase.options import QueryOptions
+            cluster = agent_manager.couchbase_client.cluster
+            id_list = ", ".join(f'"{sid}"' for sid in session_ids)
+            query = f"""
+                SELECT g.*
+                FROM `{AGENT_CATALOG_BUCKET}`.`{AGENT_CATALOG_LOGS_SCOPE}`.`{AGENT_CATALOG_GRADES_COLLECTION}` AS g
+                WHERE g.session IN [{id_list}]
+            """
+            rows = list(cluster.query(query))
+            result: dict = {}
+            for row in rows:
+                scope = row.get("grade_scope", "session")
+                key = row.get("log_id") if scope == "log" else row.get("session")
+                if key:
+                    result[key] = row
+            return result
+        except Exception as e:
+            err_str = str(e)
+            # KeyspaceNotFound (12003) = collection missing
+            # No index available (4000) = primary index missing
+            if any(marker in err_str for marker in (
+                "KeyspaceNotFoundException", "Keyspace not found",
+                "No index available", "QueryIndexNotFoundException",
+            )):
+                HRAPI._ensure_grades_collection(agent_manager)
+                return {}
+            logger.error(f"❌ Failed to load grades: {e}")
+            return {}
+        except Exception as e:
+            logger.error(f"❌ Failed to load grades: {e}")
+            return {}
+
+    @staticmethod
+    def grade_session(session_id: str, agent_manager: AgentManager):
+        """Fetch logs for a session, grade the full conversation, and persist the result."""
+        from svc.tools.grade_conversation import grade_conversation
+        import json as _json
+
+        traces = HRAPI.get_traces(agent_manager, limit=200, session=session_id)
+        sessions = traces.get("sessions", [])
+        if not sessions:
+            return {
+                "session": session_id, "score": 0, "label": "failed",
+                "summary": "No logs found for this session.",
+                "issues": ["Session not found"], "strengths": [],
+                "off_topic": False, "anomalies": [], "error": "Session not found",
+            }
+
+        logs = sessions[0].get("logs", [])
+        if not logs:
+            return {
+                "session": session_id, "score": 0, "label": "failed",
+                "summary": "Session has no log entries.",
+                "issues": ["Empty session"], "strengths": [],
+                "off_topic": False, "anomalies": [], "error": "Empty session",
+            }
+
+        raw = grade_conversation(logs=logs, agent_manager=agent_manager)
+        result = _json.loads(raw)
+        result["session"] = session_id
+        result["grade_scope"] = "session"
+        HRAPI._store_grade(result, agent_manager)
+        return result
+
+    @staticmethod
+    def grade_log(session_id: str, log_id: str, agent_manager: AgentManager):
+        """Grade a single log entry against the interview scheduling goal and persist the result.
+
+        Uses the dedicated log_entry_grader prompt which evaluates the entry in
+        isolation — no session context, no conversation history. The question it
+        answers is: does this specific event make sense for an agent whose job is
+        to set up a job interview?
+        """
+        from svc.tools.grade_log_entry import grade_log_entry
+        import json as _json
+
+        traces = HRAPI.get_traces(agent_manager, limit=200, session=session_id)
+        sessions = traces.get("sessions", [])
+        if not sessions:
+            return {
+                "session": session_id, "log_id": log_id, "score": 0, "label": "failed",
+                "summary": "Session not found.", "issues": [], "strengths": [],
+                "off_topic": False, "anomalies": [], "error": "Session not found",
+                "grade_scope": "log",
+            }
+
+        all_logs = sessions[0].get("logs", [])
+        log = next((l for l in all_logs if l.get("identifier") == log_id), None)
+        if not log:
+            return {
+                "session": session_id, "log_id": log_id, "score": 0, "label": "failed",
+                "summary": "Log entry not found.", "issues": [], "strengths": [],
+                "off_topic": False, "anomalies": [], "error": "Log not found",
+                "grade_scope": "log",
+            }
+
+        raw = grade_log_entry(log=log, agent_manager=agent_manager)
+        result = _json.loads(raw)
+        result["session"] = session_id
+        result["log_id"] = log_id
+        result["grade_scope"] = "log"
+        HRAPI._store_grade(result, agent_manager)
+        return result
 
     @staticmethod
     async def upload_resume(background_tasks: BackgroundTasks, file: UploadFile, agent_manager: AgentManager) -> ResumeUploadResponse:

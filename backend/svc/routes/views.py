@@ -10,7 +10,7 @@ from typing import Any, Dict, List
 from svc.apis.hr_api import HRAPI
 from svc.core.agent import AgentManager
 from svc.core.db import CouchbaseClient
-from svc.models.models import HealthResponse, JobMatchRequest, JobMatchResponse, ResumeUploadResponse, CandidateResponse, InitialMeetingRequest, InitialMeetingResponse
+from svc.models.models import HealthResponse, JobMatchRequest, JobMatchResponse, ResumeUploadResponse, CandidateResponse, InitialMeetingRequest, InitialMeetingResponse, ConversationGradeResponse
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
@@ -131,6 +131,31 @@ async def send_meeting_request(req: Request, request: InitialMeetingRequest):
     """
     agent = req.state.agent_manager
     return HRAPI.send_meeting_request(request, agent)
+
+@router.get("/api/traces")
+async def get_traces(req: Request, limit: int = 50, offset: int = 0, session: str = None, date: str = None):
+    """Return agent activity logs grouped by session. Pass date=YYYY-MM-DD to filter by day."""
+    agent = req.state.agent_manager
+    return HRAPI.get_traces(agent, limit=limit, offset=offset, session=session, date=date)
+
+@router.post("/api/traces/{session_id}/grade", response_model=ConversationGradeResponse)
+async def grade_session(session_id: str, req: Request):
+    """Grade the full session conversation using the LLM evaluator."""
+    agent = req.state.agent_manager
+    return HRAPI.grade_session(session_id, agent)
+
+@router.post("/api/traces/{session_id}/logs/{log_id}/grade", response_model=ConversationGradeResponse)
+async def grade_log(session_id: str, log_id: str, req: Request):
+    """Grade a single log entry in isolation."""
+    agent = req.state.agent_manager
+    return HRAPI.grade_log(session_id, log_id, agent)
+
+@router.get("/api/traces/{session_id}/grades")
+async def get_session_grades(session_id: str, req: Request):
+    """Return all stored grades for a session (both session-level and per-log)."""
+    agent = req.state.agent_manager
+    grades = HRAPI._load_grades([session_id], agent)
+    return {"grades": list(grades.values())}
 
 @router.post('/webhook/agentmail')
 async def receive_email_notification(req: Request):

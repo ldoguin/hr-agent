@@ -63,6 +63,67 @@ export interface InitialMeetingResponse {
   application_id: string;
 }
 
+// Trace / activity log types matching agentc Log schema
+export interface TraceSpan {
+  name: string[];
+  session: string;
+}
+
+export interface TraceLogContent {
+  kind: 'user' | 'assistant' | 'tool-call' | 'tool-result' | 'chat-completion' | 'request-header' | 'begin' | 'end' | 'key-value' | 'edge' | 'system';
+  // user / assistant
+  value?: string;
+  extra?: Record<string, unknown>;
+  // tool-call
+  tool_name?: string;
+  tool_call_id?: string;
+  tool_args?: Record<string, unknown>;
+  // tool-result
+  tool_result?: string;
+  status?: string;
+  // chat-completion
+  output?: string;
+  meta?: Record<string, unknown>;
+}
+
+export interface TraceLog {
+  identifier: string;
+  span: TraceSpan;
+  timestamp: string;
+  content: TraceLogContent;
+  annotations?: Record<string, unknown>;
+}
+
+export interface TraceSession {
+  session: string;
+  span_name: string[];
+  started_at: string;
+  logs: TraceLog[];
+  stored_grade?: ConversationGrade;          // session-level grade from DB
+  log_grades?: Record<string, ConversationGrade>; // per-log grades keyed by log identifier
+}
+
+export interface TracesResponse {
+  sessions: TraceSession[];
+  total: number;
+  error?: string;
+}
+
+export interface ConversationGrade {
+  session: string;
+  log_id?: string;
+  grade_scope: 'session' | 'log';
+  score: number;        // 0-10
+  label: 'excellent' | 'good' | 'acceptable' | 'poor' | 'failed' | string;
+  summary: string;
+  issues: string[];
+  strengths: string[];
+  off_topic: boolean;
+  anomalies: string[];
+  stored_at?: string;
+  error?: string;
+}
+
 // API Client Class
 class HRAgentClient {
   private baseURL: string;
@@ -211,6 +272,41 @@ class HRAgentClient {
       throw new Error(`Failed to fetch stats: ${response.statusText}`);
     }
 
+    return response.json();
+  }
+
+  /**
+   * Grade an email scheduling conversation by session ID
+   */
+  async gradeSession(sessionId: string): Promise<ConversationGrade> {
+    const response = await fetch(`${this.baseURL}/api/traces/${encodeURIComponent(sessionId)}/grade`, {
+      method: 'POST',
+    });
+    if (!response.ok) throw new Error(`Failed to grade session: ${response.statusText}`);
+    return response.json();
+  }
+
+  /**
+   * Grade a single log entry within a session
+   */
+  async gradeLog(sessionId: string, logId: string): Promise<ConversationGrade> {
+    const response = await fetch(
+      `${this.baseURL}/api/traces/${encodeURIComponent(sessionId)}/logs/${encodeURIComponent(logId)}/grade`,
+      { method: 'POST' }
+    );
+    if (!response.ok) throw new Error(`Failed to grade log: ${response.statusText}`);
+    return response.json();
+  }
+
+  /**
+   * Fetch agent activity traces grouped by session
+   */
+  async getTraces(limit: number = 50, offset: number = 0, session?: string, date?: string): Promise<TracesResponse> {
+    const params = new URLSearchParams({ limit: limit.toString(), offset: offset.toString() });
+    if (session) params.set('session', session);
+    if (date) params.set('date', date);
+    const response = await fetch(`${this.baseURL}/api/traces?${params}`);
+    if (!response.ok) throw new Error(`Failed to fetch traces: ${response.statusText}`);
     return response.json();
   }
 

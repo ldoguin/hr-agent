@@ -187,6 +187,13 @@ class AgentManager:
                 self.root_span = self.catalog.Span(name="hr_agent")
                 self.root_span.enter()
                 logger.info("✅ Agent Catalog root span created")
+                # Verify grader prompts are indexed
+                for prompt_name in ("conversation_grader", "log_entry_grader"):
+                    if self.catalog.find("prompt", name=prompt_name) is None:
+                        logger.warning(
+                            f"⚠️ '{prompt_name}' prompt not found in catalog — "
+                            "run 'agentc index svc/prompts/' to enable grading"
+                        )
             except Exception as catalog_error:
                 logger.error(f"❌ Failed to initialize Agent Catalog: {catalog_error}")
                 self.catalog = None

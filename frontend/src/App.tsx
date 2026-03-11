@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import UploadResumes from "./pages/UploadResumes";
 import AgentMatch from "./pages/AgentMatch";
+import TraceDashboard from "./pages/TraceDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -20,6 +21,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/upload-resumes" element={<UploadResumes />} />
           <Route path="/agent-match" element={<AgentMatch />} />
+          <Route path="/traces" element={<TraceDashboard />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
