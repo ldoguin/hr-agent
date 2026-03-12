@@ -1,5 +1,5 @@
 import { NavLink } from "@/components/NavLink";
-import { Search, Upload, Sparkles, Activity } from "lucide-react";
+import { Search, Upload, Sparkles, Activity, FileText, CalendarDays } from "lucide-react";
 
 export const Navigation = () => {
   return (
@@ -45,7 +45,24 @@ export const Navigation = () => {
               <Activity className="w-4 h-4" />
               <span>Traces</span>
             </NavLink>
-            
+
+            <NavLink
+              to="/applications"
+              className="flex items-center gap-2 px-4 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              activeClassName="bg-accent text-foreground font-medium"
+            >
+              <FileText className="w-4 h-4" />
+              <span>Applications</span>
+            </NavLink>
+
+            <NavLink
+              to="/meetings"
+              className="flex items-center gap-2 px-4 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              activeClassName="bg-accent text-foreground font-medium"
+            >
+              <CalendarDays className="w-4 h-4" />
+              <span>Meetings</span>
+            </NavLink>
 
           </div>
         </div>

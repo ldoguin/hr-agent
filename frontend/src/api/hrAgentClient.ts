@@ -63,6 +63,48 @@ export interface InitialMeetingResponse {
   application_id: string;
 }
 
+export interface Application {
+  id: string;
+  email: string;
+  first_name?: string;
+  last_name?: string;
+  full_name?: string;
+  position?: string;
+  company_name?: string;
+  status: string;
+  created_at?: string;
+  updated_at?: string;
+  email_sent_at?: string;
+  session_id?: string;
+}
+
+export interface PendingEmail {
+  application_id: string;
+  subject: string;
+  to: string;
+  text: string;           // hydrated from agentc trace or text_override
+  text_override?: string; // set when user edits the draft
+  email_type: 'initial' | 'reply';
+  status: 'pending' | 'sent' | 'discarded';
+  created_at?: string;
+  sent_at?: string;
+  inbox_id?: string;
+  message_id?: string;
+}
+
+export interface AutoSendSettings {
+  enabled: boolean;
+  min_score: number;
+}
+
+export interface Meeting {
+  meeting_id: string;       // application:: key of the linked application
+  start_time: string;
+  end_time: string;
+  duration_minutes?: number;
+  month?: string;
+}
+
 // Trace / activity log types matching agentc Log schema
 export interface TraceSpan {
   name: string[];
@@ -307,6 +349,73 @@ class HRAgentClient {
     if (date) params.set('date', date);
     const response = await fetch(`${this.baseURL}/api/traces?${params}`);
     if (!response.ok) throw new Error(`Failed to fetch traces: ${response.statusText}`);
+    return response.json();
+  }
+
+  async listApplications(): Promise<Application[]> {
+    const response = await fetch(`${this.baseURL}/api/applications`);
+    if (!response.ok) throw new Error(`Failed to fetch applications: ${response.statusText}`);
+    return response.json();
+  }
+
+  async listMeetings(): Promise<Meeting[]> {
+    const response = await fetch(`${this.baseURL}/api/meetings`);
+    if (!response.ok) throw new Error(`Failed to fetch meetings: ${response.statusText}`);
+    return response.json();
+  }
+
+  async getApplicationGrade(applicationId: string): Promise<ConversationGrade> {
+    const response = await fetch(`${this.baseURL}/api/applications/${encodeURIComponent(applicationId)}/grade`);
+    if (!response.ok) throw new Error(`${response.status}`);
+    return response.json();
+  }
+
+  async gradeApplication(applicationId: string): Promise<ConversationGrade> {
+    const response = await fetch(
+      `${this.baseURL}/api/applications/${encodeURIComponent(applicationId)}/grade`,
+      { method: 'POST' }
+    );
+    if (!response.ok) throw new Error(`Failed to grade: ${response.statusText}`);
+    return response.json();
+  }
+
+  async getPendingEmail(applicationId: string): Promise<PendingEmail> {
+    const response = await fetch(`${this.baseURL}/api/applications/${encodeURIComponent(applicationId)}/pending-email`);
+    if (!response.ok) throw new Error(`${response.status}`);
+    return response.json();
+  }
+
+  async updatePendingEmail(applicationId: string, text: string): Promise<PendingEmail> {
+    const response = await fetch(
+      `${this.baseURL}/api/applications/${encodeURIComponent(applicationId)}/pending-email`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) }
+    );
+    if (!response.ok) throw new Error(`Failed to update email: ${response.statusText}`);
+    return response.json();
+  }
+
+  async sendPendingEmail(applicationId: string): Promise<{ status: string }> {
+    const response = await fetch(
+      `${this.baseURL}/api/applications/${encodeURIComponent(applicationId)}/send-email`,
+      { method: 'POST' }
+    );
+    if (!response.ok) throw new Error(`Failed to send email: ${response.statusText}`);
+    return response.json();
+  }
+
+  async getAutoSendSettings(): Promise<AutoSendSettings> {
+    const response = await fetch(`${this.baseURL}/api/settings/auto-send`);
+    if (!response.ok) throw new Error(`Failed to fetch settings: ${response.statusText}`);
+    return response.json();
+  }
+
+  async setAutoSendSettings(settings: AutoSendSettings): Promise<AutoSendSettings> {
+    const response = await fetch(`${this.baseURL}/api/settings/auto-send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    if (!response.ok) throw new Error(`Failed to save settings: ${response.statusText}`);
     return response.json();
   }
 

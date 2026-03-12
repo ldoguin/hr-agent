@@ -19,7 +19,11 @@ from svc.core.config import (
     CAPELLA_API_ENDPOINT, CAPELLA_API_EMBEDDINGS_KEY, CAPELLA_API_EMBEDDING_MODEL, CAPELLA_API_LLM_KEY, CAPELLA_API_LLM_MODEL,
     OPENAI_API_KEY, INBOX_USERNAME, PORT, WEBHOOK_DOMAIN, SERVER_URL
 )
-from svc.core.db import CouchbaseClient, test_capella_connectivity
+from svc.core.db import CouchbaseClient, get_collection, test_capella_connectivity
+from svc.core.timeslot_manager import (
+    upsert_pending_email, get_auto_send_settings, mark_email_sent, get_agenda_collection,
+    _application_key as _app_key,
+)
 from agentc import Catalog
 from agentc.span import ToolCallContent, ToolResultContent, UserContent, AssistantContent
 
@@ -65,7 +69,9 @@ class AgentManager:
         """
         if self.catalog is None:
             return None
-        span = self.catalog.Span(name=name, session=str(uuid.uuid4()), **kwargs)
+        session_id = str(uuid.uuid4())
+        span = self.catalog.Span(name=name, session=session_id, **kwargs)
+        span._session_id = session_id  # reliable accessor regardless of agentc internals
         _active_span.current = span
         return span
 
@@ -830,17 +836,45 @@ Action Input: """
                 span.log(AssistantContent(value=agent_output))
                 span.exit()
 
-            # Get AgentMail client
-            client = self.get_agentmail_client()
+            # Extract application_id from the application_key (e.g. "application::uuid")
+            application_id = application_key.replace("application::", "") if application_key else None
 
-            # Send reply
-            client.inboxes.messages.reply(
-                inbox_id=inbox_id,
-                message_id=message_id,
-                to=[sender_email],
-                text=agent_output
-            )
-            print(f"Auto-reply sent to {sender_email}\n")
+            # Store email as pending for human review
+            auto_send = False
+            try:
+                collection = get_agenda_collection(self.couchbase_client.cluster)
+                if collection and application_id:
+                    upsert_pending_email(
+                        collection=collection,
+                        application_id=application_id,
+                        subject=f"Re: {subject}",
+                        to=sender_email,
+                        email_type="reply",
+                        inbox_id=inbox_id,
+                        message_id=message_id,
+                    )
+                    settings = get_auto_send_settings(collection)
+                    auto_send = settings.get("enabled", False)
+            except Exception as e:
+                logger.warning(f"Could not store pending email: {e}")
+                auto_send = True  # fall back to sending if storage fails
+
+            if auto_send:
+                client = self.get_agentmail_client()
+                client.inboxes.messages.reply(
+                    inbox_id=inbox_id,
+                    message_id=message_id,
+                    to=[sender_email],
+                    text=agent_output
+                )
+                try:
+                    if collection and application_id:
+                        mark_email_sent(collection, application_id)
+                except Exception:
+                    pass
+                logger.info(f"Auto-reply sent to {sender_email}")
+            else:
+                logger.info(f"Reply stored as pending for {sender_email} (application {application_id})")
         except Exception as e:
             print(f"Error: {e}\n")
 

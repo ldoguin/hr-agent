@@ -12,13 +12,19 @@ from typing import Any, Dict, List, Optional
 from fastapi import BackgroundTasks, File, UploadFile, HTTPException, Request
 from jinja2 import Template
 
-from svc.core.config import DEFAULT_BUCKET, DEFAULT_COLLECTION, DEFAULT_SCOPE, DEFAULT_INDEX, DEFAULT_RESUME_DIR, AGENT_CATALOG_BUCKET, AGENT_CATALOG_LOGS_SCOPE, AGENT_CATALOG_LOGS_COLLECTION, AGENT_CATALOG_GRADES_COLLECTION
+from svc.core.config import DEFAULT_BUCKET, DEFAULT_COLLECTION, DEFAULT_SCOPE, DEFAULT_INDEX, DEFAULT_RESUME_DIR, DEFAULT_AGENDA_COLLECTION, AGENT_CATALOG_BUCKET, AGENT_CATALOG_LOGS_SCOPE, AGENT_CATALOG_LOGS_COLLECTION, AGENT_CATALOG_GRADES_COLLECTION
 from svc.core.agent import AgentManager
 from agentmail import AgentMail
 from jinja2 import Template
 from svc.core.config import AGENTMAIL_API_KEY
 from agentc.span import UserContent, AssistantContent
-from svc.core.timeslot_manager import upsert_application, _application_key, get_application, get_candidate_by_email, get_agenda_collection, _session_label, _is_session_label, _session_id_from_label
+from svc.core.timeslot_manager import (
+    upsert_application, _application_key, get_application, get_candidate_by_email,
+    get_agenda_collection, _session_label, _is_session_label, _session_id_from_label,
+    list_applications, list_meetings,
+    upsert_pending_email, get_pending_email, mark_email_sent, update_pending_email_text,
+    get_auto_send_settings, upsert_auto_send_settings, get_latest_assistant_text,
+)
 from svc.models.models import HealthResponse, JobMatchRequest, JobMatchResponse, ResumeUploadResponse, CandidateResponse, InitialMeetingRequest, InitialMeetingResponse
 from svc.data.resume_loader import extract_text_from_pdf, analyze_resume_with_llm, format_candidate_for_embedding
 from svc.tools.search_candidates_vector import search_candidates_vector
@@ -845,7 +851,8 @@ class HRAPI:
                 first_name=first_name,
                 last_name=last_name,
                 position=position,
-                company_name=company_name
+                company_name=company_name,
+                session_id=getattr(span, "_session_id", None) or (span.identifier.session if span else None),
             )
             logger.info(f"Application document created: {application_id}")
         except Exception as e:
@@ -887,42 +894,72 @@ class HRAPI:
         email_text = render_email_template(email_text_template, template_variables)
         email_html = render_email_template(email_html_template, template_variables)
 
-        # Send email
-        try:
-            client = get_agentmail_client()
-            # Include the trace session ID as a label so the webhook can resume
-            # the same span when the candidate replies.
-            session_id = span.identifier.session if span else None
-            labels = ["firstitw", "scheduling", _application_key(application_id)]
-            if session_id:
-                labels.append(_session_label(session_id))
-            sent_message = client.inboxes.messages.send(
-                inbox_id='hrbot@agentmail.to',
-                to=email,
-                labels=labels,
-                subject=f"Interview Invitation - {position} Position",
-                text=email_text,
-                html=email_html
-            )
-            logger.info(f"Email sent successfully with ID: {sent_message.message_id}")
-            logger.info(f"Email sent and application created: {application_id}")
-            if span:
-                span.log(AssistantContent(
-                    value=f"Invitation sent to {email}",
-                    extra={"application_id": application_id, "message_id": sent_message.message_id, "session_id": session_id},
-                ))
-                AgentManager.close_span(span)
-            return InitialMeetingResponse(application_id = application_id)
+        subject = f"Interview Invitation - {position} Position"
+        session_id = getattr(span, "_session_id", None) or (span.identifier.session if span else None)
 
-        except Exception as e:
-            logger.error(f"Error sending email: {e}")
-            if span:
-                span.log(AssistantContent(value=f"Email failed for application {application_id}: {e}"))
-                AgentManager.close_span(span)
-            raise HTTPException(
-                status_code=500,
-                detail=f"Application created but email failed: {application_id}"
+        # Log the actual email body to the agentc span so it can be read back
+        # by get_latest_assistant_text when the pending email panel is opened.
+        if span:
+            span.log(AssistantContent(
+                value=email_text,
+                extra={"application_id": application_id, "session_id": session_id, "email_type": "initial"},
+            ))
+            AgentManager.close_span(span)
+
+        # Check auto-send settings
+        try:
+            agenda_collection = get_agenda_collection(agent_manager.couchbase_client.cluster)
+            settings = get_auto_send_settings(agenda_collection)
+        except Exception:
+            settings = {"enabled": False, "min_score": 9}
+
+        auto_send = settings.get("enabled", False)
+
+        # Store as pending for human review
+        try:
+            agenda_collection = get_agenda_collection(agent_manager.couchbase_client.cluster)
+            upsert_pending_email(
+                collection=agenda_collection,
+                application_id=application_id,
+                subject=subject,
+                to=email,
+                email_type="initial",
+                inbox_id="hrbot@agentmail.to",
+                message_id=None,
             )
+        except Exception as pe:
+            logger.warning(f"Could not store pending email: {pe}")
+            auto_send = True  # fall back to sending directly if storage fails
+
+        if auto_send:
+            try:
+                client = get_agentmail_client()
+                labels = ["firstitw", "scheduling", _application_key(application_id)]
+                if session_id:
+                    labels.append(_session_label(session_id))
+                sent_message = client.inboxes.messages.send(
+                    inbox_id='hrbot@agentmail.to',
+                    to=email,
+                    labels=labels,
+                    subject=subject,
+                    text=email_text,
+                    html=email_html
+                )
+                logger.info(f"Email sent (auto) with ID: {sent_message.message_id}")
+                try:
+                    mark_email_sent(agenda_collection, application_id)
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.error(f"Error sending email: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Application created but email failed: {application_id}"
+                )
+        else:
+            logger.info(f"Initial email stored as pending for {email} (application {application_id})")
+
+        return InitialMeetingResponse(application_id=application_id)
 
     @staticmethod
     async def receive_email_notification(req: Request, agent_manager: AgentManager):
@@ -984,6 +1021,203 @@ class HRAPI:
         thread.start()
 
         return "OK"
+
+    @staticmethod
+    def grade_application(application_id: str, agent_manager: AgentManager):
+        """Grade the full email thread for an application via its linked session."""
+        if agent_manager.couchbase_client is None:
+            raise HTTPException(status_code=503, detail="Database not connected")
+        try:
+            collection = get_agenda_collection(agent_manager.couchbase_client.cluster)
+            doc = get_application(collection, _application_key(application_id))
+            if doc is None:
+                raise HTTPException(status_code=404, detail="Application not found")
+            session_id = doc.get("session_id")
+            if not session_id:
+                raise HTTPException(status_code=404, detail="No session linked to this application")
+            return HRAPI.grade_session(session_id, agent_manager)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error grading application: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @staticmethod
+    def get_application_grade(application_id: str, agent_manager: AgentManager):
+        """Return the stored grade for an application's session without re-grading."""
+        if agent_manager.couchbase_client is None:
+            raise HTTPException(status_code=503, detail="Database not connected")
+        try:
+            collection = get_agenda_collection(agent_manager.couchbase_client.cluster)
+            doc = get_application(collection, _application_key(application_id))
+            if doc is None:
+                raise HTTPException(status_code=404, detail="Application not found")
+            session_id = doc.get("session_id")
+            if not session_id:
+                raise HTTPException(status_code=404, detail="No session linked to this application")
+            # Reuse the existing grade loader
+            grades = HRAPI._load_grades([session_id], agent_manager)
+            grade = grades.get(session_id)
+            if grade is None:
+                raise HTTPException(status_code=404, detail="No grade yet")
+            return grade
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @staticmethod
+    def get_pending_email(application_id: str, agent_manager: AgentManager):
+        if agent_manager.couchbase_client is None:
+            raise HTTPException(status_code=503, detail="Database not connected")
+        try:
+            collection = get_agenda_collection(agent_manager.couchbase_client.cluster)
+            doc = get_pending_email(collection, application_id)
+            if doc is None:
+                raise HTTPException(status_code=404, detail="No pending email for this application")
+
+            # Hydrate text: prefer user's edited override, otherwise read from agentc trace.
+            # The agent reply is logged to the agentc span before the pending doc is created,
+            # so it is always available there — we don't duplicate it in the pending doc.
+            text = doc.get("text_override")
+            if not text:
+                app_doc = get_application(collection, _application_key(application_id))
+                session_id = app_doc.get("session_id") if app_doc else None
+                if session_id:
+                    text = get_latest_assistant_text(
+                        agent_manager.couchbase_client.cluster, session_id
+                    )
+            doc["text"] = text or ""
+            return doc
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @staticmethod
+    def update_pending_email(application_id: str, text: str, agent_manager: AgentManager):
+        if agent_manager.couchbase_client is None:
+            raise HTTPException(status_code=503, detail="Database not connected")
+        try:
+            collection = get_agenda_collection(agent_manager.couchbase_client.cluster)
+            update_pending_email_text(collection, application_id, text)
+            doc = get_pending_email(collection, application_id)
+            if doc is None:
+                raise HTTPException(status_code=404, detail="No pending email for this application")
+            return doc
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @staticmethod
+    def send_pending_email(application_id: str, agent_manager: AgentManager):
+        """Fetch the pending email, send it via AgentMail, then mark as sent."""
+        if agent_manager.couchbase_client is None:
+            raise HTTPException(status_code=503, detail="Database not connected")
+        try:
+            collection = get_agenda_collection(agent_manager.couchbase_client.cluster)
+            doc = get_pending_email(collection, application_id)
+            if doc is None:
+                raise HTTPException(status_code=404, detail="No pending email for this application")
+
+            # Resolve text: override wins, otherwise read from agentc trace
+            text = doc.get("text_override")
+            if not text:
+                app_doc = get_application(collection, _application_key(application_id))
+                session_id = app_doc.get("session_id") if app_doc else None
+                if session_id:
+                    text = get_latest_assistant_text(
+                        agent_manager.couchbase_client.cluster, session_id
+                    )
+            if not text:
+                raise HTTPException(status_code=422, detail="Could not resolve email text from trace")
+
+            client = get_agentmail_client()
+            inbox_id = doc.get("inbox_id", "hrbot@agentmail.to")
+            original_message_id = doc.get("message_id")
+
+            if doc.get("email_type") == "reply" and original_message_id:
+                client.inboxes.messages.reply(
+                    inbox_id=inbox_id,
+                    message_id=original_message_id,
+                    to=[doc["to"]],
+                    text=text,
+                )
+            else:
+                labels = ["firstitw", "scheduling", _application_key(application_id)]
+                client.inboxes.messages.send(
+                    inbox_id=inbox_id,
+                    to=doc["to"],
+                    labels=labels,
+                    subject=doc["subject"],
+                    text=text,
+                )
+
+            mark_email_sent(collection, application_id)
+            logger.info(f"Pending email for {application_id} sent manually")
+            return {"status": "sent"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error sending pending email: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @staticmethod
+    def get_auto_send(agent_manager: AgentManager):
+        if agent_manager.couchbase_client is None:
+            raise HTTPException(status_code=503, detail="Database not connected")
+        try:
+            collection = get_agenda_collection(agent_manager.couchbase_client.cluster)
+            return get_auto_send_settings(collection)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @staticmethod
+    def set_auto_send(enabled: bool, min_score: int, agent_manager: AgentManager):
+        if agent_manager.couchbase_client is None:
+            raise HTTPException(status_code=503, detail="Database not connected")
+        try:
+            collection = get_agenda_collection(agent_manager.couchbase_client.cluster)
+            return upsert_auto_send_settings(collection, enabled, min_score)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @staticmethod
+    def _ensure_timeslots_index(agent_manager: AgentManager):
+        """Create a primary index on the timeslots collection if it doesn't exist."""
+        try:
+            cluster = agent_manager.couchbase_client.cluster
+            keyspace = f"`{DEFAULT_BUCKET}`.`{DEFAULT_SCOPE}`.`{DEFAULT_AGENDA_COLLECTION}`"
+            cluster.query(f"CREATE PRIMARY INDEX IF NOT EXISTS ON {keyspace}").execute()
+        except Exception as e:
+            logger.warning(f"Could not ensure timeslots index: {e}")
+
+    @staticmethod
+    def get_applications(agent_manager: AgentManager):
+        if agent_manager.couchbase_client is None or agent_manager.couchbase_client.cluster is None:
+            raise HTTPException(status_code=503, detail="Database not connected")
+        try:
+            HRAPI._ensure_timeslots_index(agent_manager)
+            rows = list_applications(agent_manager.couchbase_client.cluster)
+            logger.info(f"list_applications returned {len(rows)} rows")
+            return rows
+        except Exception as e:
+            logger.exception(f"Error listing applications: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @staticmethod
+    def get_meetings(agent_manager: AgentManager):
+        if agent_manager.couchbase_client is None or agent_manager.couchbase_client.cluster is None:
+            raise HTTPException(status_code=503, detail="Database not connected")
+        try:
+            HRAPI._ensure_timeslots_index(agent_manager)
+            rows = list_meetings(agent_manager.couchbase_client.cluster)
+            logger.info(f"list_meetings returned {len(rows)} rows")
+            return rows
+        except Exception as e:
+            logger.exception(f"Error listing meetings: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
 @staticmethod
 def is_application(s):

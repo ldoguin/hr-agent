@@ -53,6 +53,13 @@ def _meeting_key(meeting_id: str) -> str:
     """Generate meeting document key."""
     return f"meeting::{meeting_id}"
 
+def _pending_email_key(application_id: str) -> str:
+    """Generate pending-email document key."""
+    return f"pending_email::{application_id}"
+
+def _settings_key() -> str:
+    return "settings::auto_send"
+
 def _session_label(session_id: str) -> str:
     """Generate an email label that carries the trace session ID."""
     return f"session::{session_id}"
@@ -100,7 +107,7 @@ def get_candidate_by_email(collection: Collection, email: str) -> Optional[Dict[
 
 # --------- Application Functions --------- #
 
-def upsert_application(collection: Collection, application_id: str, email: str, first_name: str, last_name: str, position: str, company_name: str) -> Dict[str, Any]:
+def upsert_application(collection: Collection, application_id: str, email: str, first_name: str, last_name: str, position: str, company_name: str, session_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Create or update an application document.
     """
@@ -119,6 +126,7 @@ def upsert_application(collection: Collection, application_id: str, email: str, 
         "status": "email_sent",
         "email_sent_at": now,
         "updated_at": now,
+        "session_id": session_id,
     }
 
     # If it already exists, preserve created_at
@@ -177,13 +185,175 @@ def create_meeting(collection: Collection, candidate_email: str, slot_iso: str) 
     collection.insert(_meeting_key(meeting_id), doc)
     return doc
 
-def list_meetings(cluster: Cluster) -> list[Dict[str, Any]]:
+# --------- AgentC Trace Helpers --------- #
+
+def get_latest_assistant_text(cluster, session_id: str) -> Optional[str]:
     """
-    Query all meetings from the bucket.
+    Return the text of the last assistant log entry for a session from agentc.
+
+    This is the canonical source for the agent's reply text — we read it here
+    rather than duplicating it in the pending_email document.
     """
-    q = f"SELECT `{CB_BUCKET}`.* FROM `{CB_BUCKET}` WHERE type = 'meeting'"
+    from svc.core.config import AGENT_CATALOG_BUCKET, AGENT_CATALOG_LOGS_SCOPE, AGENT_CATALOG_LOGS_COLLECTION
+    keyspace = f"`{AGENT_CATALOG_BUCKET}`.`{AGENT_CATALOG_LOGS_SCOPE}`.`{AGENT_CATALOG_LOGS_COLLECTION}`"
+    # `span` and `timestamp` are reserved words in N1QL — must be backtick-quoted.
+    # Use a literal string parameter (safe: session_id is a UUID) to avoid
+    # named-parameter dialect differences across SDK versions.
+    q = (
+        f"SELECT l.content.`value` AS text "
+        f"FROM {keyspace} AS l "
+        f"WHERE l.`span`.`session` = \"{session_id}\" "
+        f"  AND l.content.kind = 'assistant' "
+        f"ORDER BY l.`timestamp` DESC LIMIT 1"
+    )
+    try:
+        rows = list(cluster.query(q).rows())
+        return rows[0]["text"] if rows else None
+    except Exception:
+        return None
+
+
+# --------- Pending Email Functions --------- #
+
+def upsert_pending_email(collection: Collection, application_id: str, subject: str,
+                         to: str, email_type: str, inbox_id: Optional[str],
+                         message_id: Optional[str]) -> Dict[str, Any]:
+    """
+    Store send-context for a pending outgoing email.
+
+    Text content is intentionally omitted — it is read from the agentc trace
+    (the assistant log entry for the session) so we don't duplicate it.
+    An optional 'text_override' field is set when the user edits the draft.
+    """
+    now = datetime.utcnow().isoformat()
+    doc = {
+        "type": "pending_email",
+        "application_id": application_id,
+        "subject": subject,
+        "to": to,
+        "email_type": email_type,
+        "status": "pending",
+        "created_at": now,
+        "sent_at": None,
+        "inbox_id": inbox_id,
+        "message_id": message_id,
+        "text_override": None,   # set when user edits the draft
+    }
+    collection.upsert(_pending_email_key(application_id), doc)
+    return doc
+
+
+def get_pending_email(collection: Collection, application_id: str) -> Optional[Dict[str, Any]]:
+    """Retrieve the pending email for an application, or None if not found / already sent."""
+    try:
+        doc = collection.get(_pending_email_key(application_id)).content_as[dict]
+        return doc if doc.get("status") == "pending" else None
+    except Exception:
+        return None
+
+
+def mark_email_sent(collection: Collection, application_id: str) -> None:
+    """Mark a pending email as sent."""
+    try:
+        collection.mutate_in(_pending_email_key(application_id), [
+            subdoc_upsert("status", "sent"),
+            subdoc_upsert("sent_at", datetime.utcnow().isoformat()),
+        ])
+    except Exception:
+        pass
+
+
+def update_pending_email_text(collection: Collection, application_id: str, text: str) -> None:
+    """Store a user-edited override for the pending email body."""
+    try:
+        collection.mutate_in(_pending_email_key(application_id), [
+            subdoc_upsert("text_override", text),
+        ])
+    except Exception:
+        pass
+
+
+# --------- Settings Functions --------- #
+
+def get_auto_send_settings(collection: Collection) -> Dict[str, Any]:
+    """Return auto-send settings, defaulting to disabled."""
+    try:
+        return collection.get(_settings_key()).content_as[dict]
+    except Exception:
+        return {"enabled": False, "min_score": 9}
+
+
+def upsert_auto_send_settings(collection: Collection, enabled: bool, min_score: int) -> Dict[str, Any]:
+    """Persist auto-send settings."""
+    doc = {"type": "settings", "key": "auto_send", "enabled": enabled, "min_score": min_score}
+    collection.upsert(_settings_key(), doc)
+    return doc
+
+
+def list_applications(cluster: Cluster) -> list[Dict[str, Any]]:
+    """Return all application documents, newest first."""
+    from svc.core.config import DEFAULT_BUCKET
+    keyspace = f"`{DEFAULT_BUCKET}`.`{DEFAULT_SCOPE}`.`{DEFAULT_AGENDA_COLLECTION}`"
+    q = f"SELECT t.* FROM {keyspace} AS t WHERE t.type = 'application' ORDER BY t.created_at DESC"
     res = cluster.query(q, QueryOptions())
     return list(res.rows())
+
+
+def list_meetings(cluster: Cluster) -> list[Dict[str, Any]]:
+    """
+    Return all booked meeting timeslots from month calendar documents, sorted by start_time.
+
+    Meetings are stored as subdocuments inside month docs (key=YYYY-MM) under
+    days.<DD>.timeslots.<id>. Real bookings have a meeting_id starting with 'application::'.
+
+    The scheduling tools write month docs to the same collection as candidates
+    (CB_COLLECTION env var), not the agenda collection. We use DEFAULT_COLLECTION here.
+
+    Probes the last 12 / next 12 months by KV get (no index required) then extracts
+    timeslots in Python to avoid complex nested N1QL UNNEST chains.
+    """
+    from svc.core.config import DEFAULT_COLLECTION
+    collection = get_collection(cluster=cluster, collection_name=DEFAULT_COLLECTION)
+    if collection is None:
+        return []
+
+    # Generate candidate month keys for the past 12 months and next 12 months
+    now = datetime.utcnow()
+    month_keys = []
+    for delta in range(-12, 13):
+        year = now.year + (now.month - 1 + delta) // 12
+        month = (now.month - 1 + delta) % 12 + 1
+        month_keys.append(f"{year:04d}-{month:02d}")
+
+    meetings: list[Dict[str, Any]] = []
+    for key in month_keys:
+        try:
+            doc = collection.get(key).content_as[dict]
+        except Exception:
+            continue  # month doc doesn't exist, skip
+
+        month = doc.get("month", key)
+        days = doc.get("days", {})
+        for _day_key, day_doc in days.items():
+            if not isinstance(day_doc, dict):
+                continue
+            timeslots = day_doc.get("timeslots", {})
+            for _ts_id, ts in timeslots.items():
+                if not isinstance(ts, dict):
+                    continue
+                meeting_id = ts.get("meeting_id", "")
+                if not meeting_id or not meeting_id.startswith("application::"):
+                    continue
+                meetings.append({
+                    "meeting_id": meeting_id,
+                    "start_time": ts.get("start_time", ""),
+                    "end_time": ts.get("end_time", ""),
+                    "duration_minutes": ts.get("duration_minutes"),
+                    "month": month,
+                })
+
+    meetings.sort(key=lambda m: m["start_time"])
+    return meetings
 
 
 

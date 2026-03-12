@@ -10,7 +10,7 @@ from typing import Any, Dict, List
 from svc.apis.hr_api import HRAPI
 from svc.core.agent import AgentManager
 from svc.core.db import CouchbaseClient
-from svc.models.models import HealthResponse, JobMatchRequest, JobMatchResponse, ResumeUploadResponse, CandidateResponse, InitialMeetingRequest, InitialMeetingResponse, ConversationGradeResponse
+from svc.models.models import HealthResponse, JobMatchRequest, JobMatchResponse, ResumeUploadResponse, CandidateResponse, InitialMeetingRequest, InitialMeetingResponse, ConversationGradeResponse, ApplicationResponse, MeetingResponse, PendingEmailResponse, AutoSendSettings
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
@@ -131,6 +131,70 @@ async def send_meeting_request(req: Request, request: InitialMeetingRequest):
     """
     agent = req.state.agent_manager
     return HRAPI.send_meeting_request(request, agent)
+
+@router.get("/api/applications", response_model=List[ApplicationResponse])
+async def list_applications(req: Request):
+    """Return all candidate applications, newest first."""
+    agent = req.state.agent_manager
+    return HRAPI.get_applications(agent)
+
+
+@router.get("/api/meetings", response_model=List[MeetingResponse])
+async def list_meetings(req: Request):
+    """Return all scheduled meetings, sorted by slot ascending."""
+    agent = req.state.agent_manager
+    return HRAPI.get_meetings(agent)
+
+
+@router.get("/api/applications/{application_id}/grade", response_model=ConversationGradeResponse)
+async def get_application_grade(application_id: str, req: Request):
+    """Return the stored session grade for an application (no re-grading)."""
+    agent = req.state.agent_manager
+    return HRAPI.get_application_grade(application_id, agent)
+
+
+@router.post("/api/applications/{application_id}/grade", response_model=ConversationGradeResponse)
+async def grade_application(application_id: str, req: Request):
+    """Grade the full email thread for an application via its linked session."""
+    agent = req.state.agent_manager
+    return HRAPI.grade_application(application_id, agent)
+
+
+@router.get("/api/applications/{application_id}/pending-email", response_model=PendingEmailResponse)
+async def get_pending_email(application_id: str, req: Request):
+    """Return the pending (unsent) email for an application, if any."""
+    agent = req.state.agent_manager
+    return HRAPI.get_pending_email(application_id, agent)
+
+
+@router.post("/api/applications/{application_id}/pending-email", response_model=PendingEmailResponse)
+async def update_pending_email(application_id: str, req: Request, body: dict):
+    """Update the text body of a pending email before sending."""
+    agent = req.state.agent_manager
+    text = body.get("text", "")
+    return HRAPI.update_pending_email(application_id, text, agent)
+
+
+@router.post("/api/applications/{application_id}/send-email")
+async def send_pending_email(application_id: str, req: Request):
+    """Send the pending email for an application via AgentMail."""
+    agent = req.state.agent_manager
+    return HRAPI.send_pending_email(application_id, agent)
+
+
+@router.get("/api/settings/auto-send", response_model=AutoSendSettings)
+async def get_auto_send(req: Request):
+    """Return the current auto-send settings."""
+    agent = req.state.agent_manager
+    return HRAPI.get_auto_send(agent)
+
+
+@router.post("/api/settings/auto-send", response_model=AutoSendSettings)
+async def set_auto_send(req: Request, settings: AutoSendSettings):
+    """Update auto-send settings."""
+    agent = req.state.agent_manager
+    return HRAPI.set_auto_send(settings.enabled, settings.min_score, agent)
+
 
 @router.get("/api/traces")
 async def get_traces(req: Request, limit: int = 50, offset: int = 0, session: str = None, date: str = None):
