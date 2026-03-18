@@ -115,24 +115,24 @@ def search_candidates_vector(
         result_text = f"Found {len(candidates)} matching candidates:\n\n"
 
         for i, doc in enumerate(candidates, 1):
-            candidate = doc.get('metadata', {})
-            result_text += f"**Candidate {i}: {candidate.get('name', 'Unknown')}**\n"
-            result_text += f"- Match Score: {candidate.get('_score', 0):.4f}\n"
-            result_text += f"- Email: {candidate.get('email', 'N/A')}\n"
-            result_text += f"- Location: {candidate.get('location', 'N/A')}\n"
-            result_text += f"- Years of Experience: {candidate.get('years_experience', 0)}\n"
+            score = doc.get('_score', 0)
 
-            skills = candidate.get('skills', [])
+            result_text += f"**Candidate {i}: {doc.get('name', 'Unknown')}**\n"
+            result_text += f"- Match Score: {score:.4f}\n"
+            result_text += f"- Email: {doc.get('email', 'N/A')}\n"
+            result_text += f"- Location: {doc.get('location', 'N/A')}\n"
+            result_text += f"- Years of Experience: {doc.get('years_experience', 0)}\n"
+
+            skills = doc.get('skills', [])
             if skills:
                 result_text += f"- Skills: {', '.join(skills[:10])}\n"
 
-            technical_skills = candidate.get('technical_skills', [])
+            technical_skills = doc.get('technical_skills', [])
             if technical_skills:
                 result_text += f"- Technical Skills: {', '.join(technical_skills[:10])}\n"
 
-            summary = candidate.get('summary', '')
+            summary = doc.get('summary', '')
             if summary:
-                # Truncate summary if too long
                 summary_text = summary[:200] + "..." if len(summary) > 200 else summary
                 result_text += f"- Summary: {summary_text}\n"
 

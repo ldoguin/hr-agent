@@ -766,21 +766,22 @@ Return ONLY valid JSON with the same keys. Adjust years of experience, job title
             # Format for embedding
             formatted_text = format_candidate_for_embedding(analysis)
 
-            # Store in Couchbase
+            # Store in Couchbase using direct KV upsert so the document layout
+            # is consistent with load_resumes_to_couchbase (flat, no metadata wrapper).
             if agent_manager.couchbase_client and agent_manager.embeddings:
-                vector_store = CouchbaseVectorStore(
-                    cluster=agent_manager.couchbase_client.cluster,
-                    bucket_name=DEFAULT_BUCKET,
-                    scope_name=DEFAULT_SCOPE,
-                    collection_name=DEFAULT_COLLECTION,
-                    embedding=agent_manager.embeddings,
-                    index_name=DEFAULT_INDEX,
-                )
+                embedding_vector = agent_manager.embeddings.embed_query(formatted_text)
 
-                vector_store.add_texts(
-                    texts=[formatted_text],
-                    metadatas=[analysis],
-                )
+                bucket = agent_manager.couchbase_client.cluster.bucket(DEFAULT_BUCKET)
+                collection = bucket.scope(DEFAULT_SCOPE).collection(DEFAULT_COLLECTION)
+
+                doc_id = f"candidate_{uuid.uuid4().hex[:12]}"
+                document = {
+                    "text": formatted_text,
+                    "embedding": embedding_vector,
+                    "type": "candidate",
+                    **{k: v for k, v in analysis.items() if k != "type"},
+                }
+                collection.upsert(doc_id, document)
 
                 logger.info(f"✅ Successfully processed resume: {filename}")
                 if span:
