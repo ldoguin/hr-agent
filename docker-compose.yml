@@ -1,79 +1,104 @@
-version: '3.8'
-
 services:
-  # # Couchbase Database
-  # couchbase:
-  #   image: couchbase/server:latest
-  #   container_name: couchbase-hr
-  #   ports:
-  #     - "8091-8096:8091-8096"
-  #     - "11210:11210"
-  #   environment:
-  #     - COUCHBASE_ADMINISTRATOR_USERNAME=Administrator
-  #     - COUCHBASE_ADMINISTRATOR_PASSWORD=password
-  #     - COUCHBASE_BUCKET=hr_demo
-  #     - COUCHBASE_CLUSTER_NAME=hr-cluster
-  #     - COUCHBASE_INDEX_MEM_QUOTA=256
-  #     - COUCHBASE_FTS_MEM_QUOTA=256
-  #     - COUCHBASE_QUERY_MEM_QUOTA=256
-  #     - COUCHBASE_SERVICES=data,index,query,fts
-  #   volumes:
-  #     - couchbase_data:/opt/couchbase/var
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:8091/pools"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 5
-  #     start_period: 40s
-  # Backend API Service
-  backend:
+  couchbase:
+    image: couchbase/server:enterprise-8.0.0
+    container_name: hr-couchbase
+    entrypoint: ["/init-entrypoint.sh"]
+    ports:
+      - "8091-8096:8091-8096"
+      - "11210:11210"
+    volumes:
+      - couchbase_data:/opt/couchbase/var
+      - ./scripts/couchbase-entrypoint.sh:/init-entrypoint.sh:ro
+    environment:
+      CB_USER: Administrator
+      CB_PASS: password
+    healthcheck:
+      # Verify the node is up and has the query service enabled
+      test: ["CMD", "sh", "-c", "curl -sf -u Administrator:password http://localhost:8091/pools/default | grep -q '\"n1ql\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  couchbase-init:
+    image: curlimages/curl:latest
+    container_name: hr-couchbase-init
+    depends_on:
+      couchbase:
+        condition: service_healthy
+    volumes:
+      - ./scripts/init-couchbase.sh:/init-couchbase.sh:ro
+      - ./backend/agentcatalog_index.json:/agentcatalog_index.json:ro
+    environment:
+      CB_HOST: couchbase
+      CB_USER: Administrator
+      CB_PASS: password
+    entrypoint: ["sh", "/init-couchbase.sh", "--no-docker"]
+
+  app:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
-    container_name: hr-backend
+    container_name: hr-app
     ports:
       - "8000:8000"
+    depends_on:
+      couchbase-init:
+        condition: service_completed_successfully
     environment:
-      # - CB_CONN_STRING=couchbase://couchbase
-      # - CB_USERNAME=Administrator
-      # - CB_PASSWORD=password
-      # - DEFAULT_BUCKET=hr_demo
-      - ENVIRONMENT=docker
-      - WORKERS=1
-      - AGENT_CATALOG_CONN_ROOT_CERTIFICATE=/app/burgundydavidluckham-root-certificate.txt
-      - INDEX_DEFINITION_PATH=/app/agentcatalog_index.json
-      # - SERVER_URL=http://localhost:8000/
+      CB_CONN_STRING: couchbase://couchbase
+      CB_USERNAME: Administrator
+      CB_PASSWORD: password
+      CB_BUCKET: default
+      CB_SCOPE: agentc_data
+      CB_COLLECTION: candidates
+      CB_AGENDA_COLLECTION: timeslots
+      CB_INDEX: candidates_index
+      AGENT_CATALOG_BUCKET: agentc
+      AGENT_CATALOG_LOGS_SCOPE: agent_activity
+      AGENT_CATALOG_LOGS_COLLECTION: logs
+      AGENT_CATALOG_GRADES_COLLECTION: grades
+      WORKERS: 1
+      TIMEOUT: 300
+      API_USERNAME: ubuntu
+      API_PASSWORD: debian
+      API_SECRET_KEY: 09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7
+      API_ALGORITHM: HS256
+      API_ACCESS_TOKEN_EXPIRE_MINUTES: 5256000
+      AGENT_CATALOG_CONN_STRING: couchbase://couchbase
+      AGENT_CATALOG_USERNAME: Administrator
+      AGENT_CATALOG_PASSWORD: password
+      CAPELLA_API_ENDPOINT: https://xxxxx.ai.cloud.couchbase.com
+      CAPELLA_API_LLM_KEY: cbsk-v1-XXXX
+      CAPELLA_API_LLM_MODEL: deepseek-ai/deepseek-r1-distill-llama-8b
+      CAPELLA_API_EMBEDDINGS_KEY: cbsk-v1-XXXXX
+      CAPELLA_API_EMBEDDING_MODEL: nvidia/llama-3.2-nv-embedqa-1b-v2
+      RESUME_DIR: resumes
+      OPENAI_API_KEY: sk-proj-XXXX
+      AGENTMAIL_API_KEY: am_XXXX
+      NGROK_AUTHTOKEN: XXXXX
+      WEBHOOK_DOMAIN: XXXXXXXX.ngrok-free.app
+      INBOX_USERNAME: hrbot
+      TOKENIZERS_PARALLELISM: false
+      SKIP_INDEX_CREATION: true
+      VITE_API_BASE_URL: XXXXXXXX.ngrok-free.app
+      PRODUCTION: true
+    env_file:
+      - path: .env
+        required: false
     volumes:
-      - ./backend/resumes:/app/resumes
+      - resumes:/app/resumes
       - ./backend/logs:/app/logs
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/')"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
-    post_start:
-      - command: ["agentc", "init"]
-
-  # Frontend Service
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: hr-frontend
-    ports:
-      - "3000:80"
-    depends_on:
-      - backend
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+      start_period: 60s
 
 volumes:
   couchbase_data:
+    driver: local
+  resumes:
     driver: local

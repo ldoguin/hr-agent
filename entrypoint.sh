@@ -24,6 +24,6 @@ fi
 cd /app
 PYTHONPATH=/app poetry run agentc index svc/prompts/ || true
 PYTHONPATH=/app poetry run agentc index svc/tools/ || true
-
+PYTHONPATH=/app poetry run agentc publish || true
 # Start the application
 exec "$@"
