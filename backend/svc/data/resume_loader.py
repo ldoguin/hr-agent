@@ -262,12 +262,12 @@ def load_resumes_to_couchbase(
         
         with tqdm(total=len(resume_data), desc="Storing candidate documents") as pbar:
             for i, resume in enumerate(resume_data):
-                # Create document with embedding
                 doc_id = f"candidate_{uuid.uuid4().hex[:12]}"
-                
+
                 document = {
-                    "text": texts[i],  # The formatted text for searching
-                    "embedding": all_embeddings[i],  # Vector embedding
+                    "text": texts[i],
+                    "embedding": all_embeddings[i],
+                    "type": "candidate",
                     "name": resume.get("name", "Unknown"),
                     "email": resume.get("email", ""),
                     "phone": resume.get("phone", ""),
@@ -281,10 +281,8 @@ def load_resumes_to_couchbase(
                     "education": resume.get("education", ""),
                     "work_history": resume.get("work_history", []),
                     "filename": resume.get("filename", ""),
-                    "type": "candidate",  # Type field for search index mapping
                 }
-                
-                # Store document
+
                 collection.upsert(doc_id, document)
                 pbar.update(1)
 
