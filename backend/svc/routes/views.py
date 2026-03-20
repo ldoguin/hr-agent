@@ -17,16 +17,16 @@ logger = logging.getLogger("uvicorn.error")
 
 # API Endpoints
 
-@router.get("/", response_model=Dict[str, str])
-async def root():
-    """Root endpoint with API information."""
-    return {
-        "name": "Agentic HR Recruitment API",
-        "version": "1.0.0",
-        "status": "running",
-        "docs": "/docs",
-        "health": "/health",
-    }
+# @router.get("/", response_model=Dict[str, str])
+# async def root():
+#     """Root endpoint with API information."""
+#     return {
+#         "name": "Agentic HR Recruitment API",
+#         "version": "1.0.0",
+#         "status": "running",
+#         "docs": "/docs",
+#         "health": "/health",
+#     }
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check(req: Request
